@@ -39,7 +39,7 @@ internal sealed class DeviceSession : IDisposable
             _client = new ZktecoComClient();
 
             var connected = _client.Connect(IpAddress, Port, password);
-            var vendorError = connected ? null : _client.GetLastError();
+            int? vendorError = connected ? null : _client.GetLastError();
             Connected = connected;
             ConnectedAt = connected ? DateTimeOffset.Now : null;
             LastError = connected ? null : $"Connect_Net failed. Vendor error: {vendorError}.";
