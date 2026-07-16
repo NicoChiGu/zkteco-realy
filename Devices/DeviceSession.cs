@@ -73,8 +73,36 @@ internal sealed class DeviceSession : IDisposable
             return true;
         }, cancellationToken);
 
+    public Task<IReadOnlyList<UserInfo>> GetUsersAsync(CancellationToken ct) => InvokeClientAsync(c => c.GetUsers(), ct);
+    public Task<UserInfo> GetUserAsync(string enrollNumber, CancellationToken ct) => InvokeClientAsync(c => c.GetUser(enrollNumber), ct);
+    public Task<OperationResult> UpsertUserAsync(string enrollNumber, UpsertUserRequest request, CancellationToken ct) => InvokeClientAsync(c => c.UpsertUser(enrollNumber, request), ct);
+    public Task<OperationResult> DeleteUserAsync(string enrollNumber, CancellationToken ct) => InvokeClientAsync(c => c.DeleteUser(enrollNumber), ct);
+    public Task<FingerprintTemplateResult> GetFingerprintAsync(string enrollNumber, int fingerIndex, CancellationToken ct) => InvokeClientAsync(c => c.GetFingerprint(enrollNumber, fingerIndex), ct);
+    public Task<OperationResult> SetFingerprintAsync(string enrollNumber, FingerprintTemplateRequest request, CancellationToken ct) => InvokeClientAsync(c => c.SetFingerprint(enrollNumber, request), ct);
+    public Task<OperationResult> DeleteFingerprintAsync(string enrollNumber, int fingerIndex, CancellationToken ct) => InvokeClientAsync(c => c.DeleteFingerprint(enrollNumber, fingerIndex), ct);
+    public Task<FaceTemplateResult> GetFaceAsync(string enrollNumber, int faceIndex, CancellationToken ct) => InvokeClientAsync(c => c.GetFace(enrollNumber, faceIndex), ct);
+    public Task<OperationResult> SetFaceAsync(string enrollNumber, FaceTemplateRequest request, CancellationToken ct) => InvokeClientAsync(c => c.SetFace(enrollNumber, request), ct);
+    public Task<OperationResult> DeleteFaceAsync(string enrollNumber, int faceIndex, CancellationToken ct) => InvokeClientAsync(c => c.DeleteFace(enrollNumber, faceIndex), ct);
+    public Task<OperationResult> UploadUserPhotoAsync(string enrollNumber, UserPhotoRequest request, CancellationToken ct) => InvokeClientAsync(c => c.UploadUserPhoto(enrollNumber, request), ct);
+    public Task<OperationResult> UnlockDoorAsync(DoorUnlockRequest request, CancellationToken ct) => InvokeClientAsync(c => c.UnlockDoor(request), ct);
+    public Task<TimeZoneInfoResult> GetTimeZoneAsync(int index, CancellationToken ct) => InvokeClientAsync(c => c.GetTimeZone(index), ct);
+    public Task<OperationResult> SetTimeZoneAsync(TimeZoneRequest request, CancellationToken ct) => InvokeClientAsync(c => c.SetTimeZone(request), ct);
+    public Task<AccessGroupInfo> GetAccessGroupAsync(int group, CancellationToken ct) => InvokeClientAsync(c => c.GetAccessGroup(group), ct);
+    public Task<OperationResult> SetAccessGroupAsync(AccessGroupRequest request, CancellationToken ct) => InvokeClientAsync(c => c.SetAccessGroup(request), ct);
+    public Task<UserAccessInfo> GetUserAccessAsync(string enrollNumber, CancellationToken ct) => InvokeClientAsync(c => c.GetUserAccess(enrollNumber), ct);
+    public Task<OperationResult> SetUserAccessAsync(string enrollNumber, UserAccessRequest request, CancellationToken ct) => InvokeClientAsync(c => c.SetUserAccess(enrollNumber, request), ct);
+    public Task<UnlockCombinationInfo> GetUnlockCombinationAsync(int number, CancellationToken ct) => InvokeClientAsync(c => c.GetUnlockCombination(number), ct);
+    public Task<OperationResult> SetUnlockCombinationAsync(UnlockCombinationRequest request, CancellationToken ct) => InvokeClientAsync(c => c.SetUnlockCombination(request), ct);
+
     public DeviceStatus GetStatus() =>
         new(DeviceId, IpAddress, Port, Connected, ConnectedAt, LastError);
+
+    private Task<T> InvokeClientAsync<T>(Func<ZktecoComClient, T> operation, CancellationToken cancellationToken) =>
+        InvokeAsync(() =>
+        {
+            EnsureConnected();
+            return operation(_client!);
+        }, cancellationToken);
 
     private Task<T> InvokeAsync<T>(Func<T> operation, CancellationToken cancellationToken)
     {

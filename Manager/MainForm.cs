@@ -16,6 +16,12 @@ public sealed class MainForm : Form
     private readonly Button _start = new() { Text = "启动 API", AutoSize = true };
     private readonly Button _stop = new() { Text = "停止 API", AutoSize = true, Enabled = false };
     private readonly Button _openHealth = new() { Text = "打开健康检查", AutoSize = true, Enabled = false };
+    private readonly Button _checkSdk = new() { Text = "检查 SDK / DLL", AutoSize = true };
+    private readonly TextBox _updateRepository = new() { Width = 300, Text = "NicoChiGu/zkteco-realy" };
+    private readonly TextBox _githubProxy = new() { Width = 430, PlaceholderText = "例如：https://v4.gh-proxy.org/" };
+    private readonly Button _checkUpdate = new() { Text = "检查更新", AutoSize = true };
+    private readonly Label _versionStatus = new() { Text = $"当前版本：{GitHubUpdateService.CurrentVersion}", AutoSize = true };
+    private readonly Label _sdkStatus = new() { Text = "SDK 状态：尚未检查", AutoSize = true };
     private readonly Label _status = new() { Text = "状态：已停止", AutoSize = true };
     private readonly TextBox _log = new()
     {
@@ -31,7 +37,7 @@ public sealed class MainForm : Form
     {
         Text = "ZKTeco Relay 管理器";
         Width = 760;
-        Height = 520;
+        Height = 650;
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(680, 440);
 
@@ -65,13 +71,28 @@ public sealed class MainForm : Form
         settings.Controls.Add(_apiKey, 1, 2);
         settings.Controls.Add(_generateKey, 2, 2);
         settings.Controls.Add(_showKey, 1, 3);
+        settings.Controls.Add(new Label { Text = "更新仓库", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 4);
+        settings.Controls.Add(_updateRepository, 1, 4);
+        settings.Controls.Add(new Label { Text = "GitHub 镜像", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 5);
+        settings.Controls.Add(_githubProxy, 1, 5);
 
         var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top };
-        actions.Controls.AddRange([_save, _start, _stop, _openHealth]);
+        actions.Controls.AddRange([_save, _checkSdk, _checkUpdate, _start, _stop, _openHealth]);
+
+        var statuses = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            Dock = DockStyle.Top,
+            FlowDirection = FlowDirection.TopDown,
+            WrapContents = false
+        };
+        statuses.Controls.Add(_versionStatus);
+        statuses.Controls.Add(_sdkStatus);
+        statuses.Controls.Add(_status);
 
         root.Controls.Add(settings, 0, 0);
         root.Controls.Add(actions, 0, 1);
-        root.Controls.Add(_status, 0, 2);
+        root.Controls.Add(statuses, 0, 2);
         root.Controls.Add(_log, 0, 3);
         Controls.Add(root);
 
@@ -81,9 +102,12 @@ public sealed class MainForm : Form
         _start.Click += async (_, _) => await StartApiAsync();
         _stop.Click += async (_, _) => await StopApiAsync();
         _openHealth.Click += (_, _) => OpenHealthPage();
+        _checkSdk.Click += (_, _) => CheckSdkHealth(showDialog: true);
+        _checkUpdate.Click += async (_, _) => await CheckForUpdatesAsync();
         FormClosing += OnFormClosing;
 
         LoadConfiguration();
+        CheckSdkHealth(showDialog: false);
     }
 
     private string BindUrl => $"http://{(_allowLan.Checked ? "0.0.0.0" : "127.0.0.1")}:{(int)_port.Value}";
@@ -97,6 +121,16 @@ public sealed class MainForm : Form
         if (values.TryGetValue("ZKTECO_API_KEY", out var key))
         {
             _apiKey.Text = key;
+        }
+
+        if (values.TryGetValue("ZKTECO_UPDATE_REPOSITORY", out var repository) && !string.IsNullOrWhiteSpace(repository))
+        {
+            _updateRepository.Text = repository;
+        }
+
+        if (values.TryGetValue("ZKTECO_GITHUB_PROXY", out var proxy))
+        {
+            _githubProxy.Text = proxy;
         }
 
         if (values.TryGetValue("ZKTECO_BIND_URL", out var bindUrl) && Uri.TryCreate(bindUrl, UriKind.Absolute, out var uri))
@@ -124,7 +158,9 @@ public sealed class MainForm : Form
         EnvSettings.Write(EnvPath, new Dictionary<string, string>
         {
             ["ZKTECO_API_KEY"] = key,
-            ["ZKTECO_BIND_URL"] = BindUrl
+            ["ZKTECO_BIND_URL"] = BindUrl,
+            ["ZKTECO_UPDATE_REPOSITORY"] = _updateRepository.Text.Trim(),
+            ["ZKTECO_GITHUB_PROXY"] = _githubProxy.Text.Trim()
         });
 
         AppendLog($"配置已保存，监听地址：{BindUrl}");
@@ -140,6 +176,18 @@ public sealed class MainForm : Form
     {
         if (_application is not null || !SaveConfiguration(showMessage: false))
         {
+            return;
+        }
+
+        var sdkHealth = CheckSdkHealth(showDialog: false);
+        if (!sdkHealth.IsHealthy)
+        {
+            MessageBox.Show(
+                this,
+                "ZKTeco SDK/DLL 健康检查未通过，API 未启动。请查看日志并运行对应位数的 SDK 安装脚本。",
+                "SDK 未就绪",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Error);
             return;
         }
 
@@ -159,6 +207,8 @@ public sealed class MainForm : Form
             _allowLan.Enabled = false;
             _apiKey.Enabled = false;
             _generateKey.Enabled = false;
+            _updateRepository.Enabled = false;
+            _githubProxy.Enabled = false;
             AppendLog("API 已启动。除 /health 外，所有请求必须携带 X-API-Key。" );
         }
         catch (Exception ex)
@@ -208,6 +258,8 @@ public sealed class MainForm : Form
             _allowLan.Enabled = true;
             _apiKey.Enabled = true;
             _generateKey.Enabled = true;
+            _updateRepository.Enabled = true;
+            _githubProxy.Enabled = true;
             SetBusy(false);
         }
     }
@@ -217,10 +269,124 @@ public sealed class MainForm : Form
         Process.Start(new ProcessStartInfo(BrowserUrl) { UseShellExecute = true });
     }
 
+    private SdkHealthResult CheckSdkHealth(bool showDialog)
+    {
+        var result = SdkHealthChecker.Check();
+        _sdkStatus.Text = result.IsHealthy
+            ? $"SDK 状态：正常（{result.Architecture}）"
+            : $"SDK 状态：异常（{result.Architecture}）";
+        _sdkStatus.ForeColor = result.IsHealthy ? Color.DarkGreen : Color.DarkRed;
+
+        AppendLog("开始检查 ZKTeco SDK/DLL。" );
+        foreach (var detail in result.Details)
+        {
+            AppendLog($"SDK：{detail}");
+        }
+
+        foreach (var warning in result.Warnings)
+        {
+            AppendLog($"SDK 警告：{warning}");
+        }
+
+        foreach (var error in result.Errors)
+        {
+            AppendLog($"SDK 错误：{error}");
+        }
+
+        AppendLog(result.IsHealthy ? "SDK/DLL 健康检查通过。" : "SDK/DLL 健康检查失败。" );
+
+        if (showDialog)
+        {
+            var message = result.IsHealthy
+                ? $"SDK/DLL 健康检查通过。\n架构：{result.Architecture}\n版本：{result.FileVersion ?? "未知"}\n路径：{result.ComServerPath ?? "未知"}"
+                : $"SDK/DLL 健康检查失败：\n\n{string.Join(Environment.NewLine, result.Errors)}\n\n请运行与 {result.Architecture} 程序匹配的 SDK 安装脚本。";
+
+            MessageBox.Show(
+                this,
+                message,
+                result.IsHealthy ? "SDK 正常" : "SDK 异常",
+                MessageBoxButtons.OK,
+                result.IsHealthy ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+        }
+
+        return result;
+    }
+
+    private async Task CheckForUpdatesAsync()
+    {
+        try
+        {
+            SetBusy(true);
+            AppendLog("正在检查 GitHub Release 更新。" );
+            var settings = GitHubUpdateService.NormalizeSettings(_updateRepository.Text, _githubProxy.Text);
+            var update = await GitHubUpdateService.CheckAsync(settings, CancellationToken.None);
+            _versionStatus.Text = $"当前版本：{update.CurrentVersion}；最新版本：{update.LatestVersion}";
+
+            if (!update.IsUpdateAvailable)
+            {
+                AppendLog($"当前已是最新版本：{update.LatestVersion}。" );
+                MessageBox.Show(this, $"当前已是最新版本 {update.LatestVersion}。", "无需更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
+                return;
+            }
+
+            AppendLog($"发现新版本 {update.TagName}，发布时间：{update.PublishedAt:yyyy-MM-dd HH:mm:ss zzz}。" );
+            var message = $"发现新版本 {update.TagName}\n当前版本：{update.CurrentVersion}\n发布名称：{update.ReleaseName}\n\n是否下载 {update.Package.Name}？";
+            var choice = MessageBox.Show(this, message, "发现更新", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Information);
+            if (choice == DialogResult.Cancel)
+            {
+                GitHubUpdateService.OpenReleasePage(update);
+                return;
+            }
+
+            if (choice != DialogResult.Yes)
+            {
+                return;
+            }
+
+            using var folderDialog = new FolderBrowserDialog
+            {
+                Description = "选择更新包保存目录",
+                SelectedPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
+                ShowNewFolderButton = true
+            };
+            if (folderDialog.ShowDialog(this) != DialogResult.OK)
+            {
+                return;
+            }
+
+            var progress = new Progress<int>(percent => _versionStatus.Text = $"正在下载 {update.TagName}：{percent}%");
+            var savedPath = await GitHubUpdateService.DownloadAsync(settings, update, folderDialog.SelectedPath, progress, CancellationToken.None);
+            _versionStatus.Text = $"更新包已下载：{update.TagName}";
+            AppendLog($"更新包已下载并通过校验：{savedPath}" );
+
+            var openFolder = MessageBox.Show(
+                this,
+                $"更新包已下载并通过 SHA-256 校验：\n{savedPath}\n\n请停止 API、退出管理器后解压覆盖。是否打开所在目录？",
+                "下载完成",
+                MessageBoxButtons.YesNo,
+                MessageBoxIcon.Information);
+            if (openFolder == DialogResult.Yes)
+            {
+                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{savedPath}\"") { UseShellExecute = true });
+            }
+        }
+        catch (Exception ex)
+        {
+            AppendLog($"检查或下载更新失败：{ex.Message}" );
+            MessageBox.Show(this, ex.Message, "更新失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
+        }
+        finally
+        {
+            SetBusy(false);
+        }
+    }
+
     private void SetBusy(bool busy)
     {
         UseWaitCursor = busy;
         _save.Enabled = !busy && _application is null;
+        _checkSdk.Enabled = !busy && _application is null;
+        _checkUpdate.Enabled = !busy;
     }
 
     private async void OnFormClosing(object? sender, FormClosingEventArgs e)

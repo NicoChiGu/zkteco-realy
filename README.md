@@ -4,6 +4,7 @@
 
 - 详细 API 请求、响应与接入示例：[`docs/API.md`](docs/API.md)
 - OpenAPI 3.0 定义：[`docs/openapi.yaml`](docs/openapi.yaml)
+- 人员、生物特征与门禁扩展接口：[`docs/EXTENDED_API.md`](docs/EXTENDED_API.md)
 
 
 基于 C#、ASP.NET Core 和 Windows COM 的 ZKTeco 脱机通讯 REST 中继。
@@ -56,6 +57,22 @@ scripts/install-sdk-x64.ps1 或 scripts/install-sdk-x86.ps1
 
 两个 EXE 都按 self-contained、single-file 方式发布，目标机器不需要预先安装 .NET Runtime。ZKTeco 厂商 DLL 不进入 GitHub 构建包，需要在目标 Windows 主机上从授权开发包中安装并注册。
 
+推送 `v*` 标签时，工作流还会自动创建 GitHub Release，并上传：
+
+```text
+zkteco-relay-win-x64.zip
+zkteco-relay-win-x64.zip.sha256
+zkteco-relay-win-x86.zip
+zkteco-relay-win-x86.zip.sha256
+```
+
+示例发布命令：
+
+```powershell
+git tag v1.2.0
+git push origin v1.2.0
+```
+
 ## 图形管理器
 
 运行：
@@ -75,8 +92,28 @@ scripts/install-sdk-x64.ps1 或 scripts/install-sdk-x86.ps1
 - 启动和停止 API。
 - 打开 `/health` 健康检查。
 - 显示启动和停止日志，但不显示密钥。
+- 启动时自动检查 ZKTeco COM 注册、DLL 位数、关键依赖和 COM 实例化。
+- 提供“检查 SDK / DLL”按钮，可查看 DLL 路径、版本、缺失依赖及修复提示。
+- 提供 GitHub Release 更新检查和下载，自动选择与当前进程匹配的 x64/x86 包并校验 SHA-256。
+- 支持配置 GitHub 镜像前缀，例如 `https://v4.gh-proxy.org/`。
+- SDK 健康检查失败时阻止启动 API，避免服务启动后才在设备连接时失败。
 
 配置保存在管理器 EXE 所在目录的 `.env`。请把程序放到当前用户拥有写权限的目录，不要直接放入需要管理员写权限的系统目录。
+
+更新设置：
+
+```dotenv
+ZKTECO_UPDATE_REPOSITORY=NicoChiGu/zkteco-realy
+ZKTECO_GITHUB_PROXY=https://v4.gh-proxy.org/
+```
+
+镜像配置是 URL 前缀。管理器会把官方地址拼接成类似：
+
+```text
+https://v4.gh-proxy.org/https://api.github.com/repos/NicoChiGu/zkteco-realy/releases/latest
+```
+
+留空 `ZKTECO_GITHUB_PROXY` 时直接连接 GitHub。下载完成后管理器不会自动覆盖正在运行的文件，而是保存 ZIP 并提示退出程序后手动解压覆盖。
 
 ## 命令行服务配置
 
@@ -108,7 +145,7 @@ ZKTECO_BIND_URL=http://127.0.0.1:5080
 
 ## SDK 安装
 
-EXE 位数必须与已注册的 ZKTeco COM SDK 位数一致。
+EXE 位数必须与已注册的 ZKTeco COM SDK 位数一致。GUI 管理器会从对应位数的 Windows 注册表视图读取 `zkemkeeper` COM 注册信息，并实际创建一次 COM 对象验证安装状态。
 
 ### x64 包
 
@@ -176,6 +213,15 @@ POST /api/v1/devices/{deviceId}/connect
 POST /api/v1/devices/{deviceId}/disconnect
 GET  /api/v1/devices/{deviceId}/attendance
 POST /api/v1/devices/{deviceId}/restart
+GET/PUT/DELETE /api/v1/devices/{deviceId}/users/...
+GET/PUT/DELETE /api/v1/devices/{deviceId}/users/{enrollNumber}/fingerprints/...
+GET/PUT/DELETE /api/v1/devices/{deviceId}/users/{enrollNumber}/face
+PUT  /api/v1/devices/{deviceId}/users/{enrollNumber}/photo
+POST /api/v1/devices/{deviceId}/access/unlock
+GET/PUT /api/v1/devices/{deviceId}/access/time-zones/...
+GET/PUT /api/v1/devices/{deviceId}/access/groups/...
+GET/PUT /api/v1/devices/{deviceId}/access/users/...
+GET/PUT /api/v1/devices/{deviceId}/access/unlock-combinations/...
 ```
 
 连接设备示例：

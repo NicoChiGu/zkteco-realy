@@ -2,7 +2,7 @@ using ZktecoRelay.Models;
 
 namespace ZktecoRelay.Devices;
 
-internal sealed class ZktecoComClient : IDisposable
+internal sealed partial class ZktecoComClient : IDisposable
 {
     private const int MachineNumber = 1;
     private readonly dynamic _sdk;

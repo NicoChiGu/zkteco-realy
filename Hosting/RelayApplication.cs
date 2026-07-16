@@ -8,7 +8,7 @@ namespace ZktecoRelay.Hosting;
 
 public sealed record RelayOverrides(string? BindUrl = null, string? ApiKey = null);
 
-public static class RelayApplication
+public static partial class RelayApplication
 {
     public static WebApplication Build(string[] args, RelayOverrides? overrides = null)
     {
@@ -68,6 +68,7 @@ public static class RelayApplication
 
         app.MapHealthChecks("/health");
         MapDeviceEndpoints(app);
+        MapExtendedEndpoints(app);
         return app;
     }
 

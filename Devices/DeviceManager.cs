@@ -66,6 +66,27 @@ public sealed class DeviceManager : IDisposable
     public Task RestartAsync(string deviceId, CancellationToken cancellationToken) =>
         GetRequiredSession(deviceId).RestartAsync(cancellationToken);
 
+    public Task<IReadOnlyList<UserInfo>> GetUsersAsync(string deviceId, CancellationToken ct) => GetRequiredSession(deviceId).GetUsersAsync(ct);
+    public Task<UserInfo> GetUserAsync(string deviceId, string enrollNumber, CancellationToken ct) => GetRequiredSession(deviceId).GetUserAsync(enrollNumber, ct);
+    public Task<OperationResult> UpsertUserAsync(string deviceId, string enrollNumber, UpsertUserRequest request, CancellationToken ct) => GetRequiredSession(deviceId).UpsertUserAsync(enrollNumber, request, ct);
+    public Task<OperationResult> DeleteUserAsync(string deviceId, string enrollNumber, CancellationToken ct) => GetRequiredSession(deviceId).DeleteUserAsync(enrollNumber, ct);
+    public Task<FingerprintTemplateResult> GetFingerprintAsync(string deviceId, string enrollNumber, int fingerIndex, CancellationToken ct) => GetRequiredSession(deviceId).GetFingerprintAsync(enrollNumber, fingerIndex, ct);
+    public Task<OperationResult> SetFingerprintAsync(string deviceId, string enrollNumber, FingerprintTemplateRequest request, CancellationToken ct) => GetRequiredSession(deviceId).SetFingerprintAsync(enrollNumber, request, ct);
+    public Task<OperationResult> DeleteFingerprintAsync(string deviceId, string enrollNumber, int fingerIndex, CancellationToken ct) => GetRequiredSession(deviceId).DeleteFingerprintAsync(enrollNumber, fingerIndex, ct);
+    public Task<FaceTemplateResult> GetFaceAsync(string deviceId, string enrollNumber, int faceIndex, CancellationToken ct) => GetRequiredSession(deviceId).GetFaceAsync(enrollNumber, faceIndex, ct);
+    public Task<OperationResult> SetFaceAsync(string deviceId, string enrollNumber, FaceTemplateRequest request, CancellationToken ct) => GetRequiredSession(deviceId).SetFaceAsync(enrollNumber, request, ct);
+    public Task<OperationResult> DeleteFaceAsync(string deviceId, string enrollNumber, int faceIndex, CancellationToken ct) => GetRequiredSession(deviceId).DeleteFaceAsync(enrollNumber, faceIndex, ct);
+    public Task<OperationResult> UploadUserPhotoAsync(string deviceId, string enrollNumber, UserPhotoRequest request, CancellationToken ct) => GetRequiredSession(deviceId).UploadUserPhotoAsync(enrollNumber, request, ct);
+    public Task<OperationResult> UnlockDoorAsync(string deviceId, DoorUnlockRequest request, CancellationToken ct) => GetRequiredSession(deviceId).UnlockDoorAsync(request, ct);
+    public Task<TimeZoneInfoResult> GetTimeZoneAsync(string deviceId, int index, CancellationToken ct) => GetRequiredSession(deviceId).GetTimeZoneAsync(index, ct);
+    public Task<OperationResult> SetTimeZoneAsync(string deviceId, TimeZoneRequest request, CancellationToken ct) => GetRequiredSession(deviceId).SetTimeZoneAsync(request, ct);
+    public Task<AccessGroupInfo> GetAccessGroupAsync(string deviceId, int group, CancellationToken ct) => GetRequiredSession(deviceId).GetAccessGroupAsync(group, ct);
+    public Task<OperationResult> SetAccessGroupAsync(string deviceId, AccessGroupRequest request, CancellationToken ct) => GetRequiredSession(deviceId).SetAccessGroupAsync(request, ct);
+    public Task<UserAccessInfo> GetUserAccessAsync(string deviceId, string enrollNumber, CancellationToken ct) => GetRequiredSession(deviceId).GetUserAccessAsync(enrollNumber, ct);
+    public Task<OperationResult> SetUserAccessAsync(string deviceId, string enrollNumber, UserAccessRequest request, CancellationToken ct) => GetRequiredSession(deviceId).SetUserAccessAsync(enrollNumber, request, ct);
+    public Task<UnlockCombinationInfo> GetUnlockCombinationAsync(string deviceId, int number, CancellationToken ct) => GetRequiredSession(deviceId).GetUnlockCombinationAsync(number, ct);
+    public Task<OperationResult> SetUnlockCombinationAsync(string deviceId, UnlockCombinationRequest request, CancellationToken ct) => GetRequiredSession(deviceId).SetUnlockCombinationAsync(request, ct);
+
     private DeviceSession GetRequiredSession(string deviceId)
     {
         if (!_sessions.TryGetValue(deviceId, out var session))
