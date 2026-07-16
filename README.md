@@ -94,6 +94,9 @@ git push origin v1.2.0
 - 显示启动和停止日志，但不显示密钥。
 - 启动时自动检查 ZKTeco COM 注册、DLL 位数、关键依赖和 COM 实例化。
 - 提供“检查 SDK / DLL”按钮，可查看 DLL 路径、版本、缺失依赖及修复提示。
+- 最小化或关闭窗口时可隐藏到系统托盘；双击托盘图标恢复窗口。
+- 托盘菜单支持启动/停止 API、打开健康检查和退出程序。
+- 设备连接配置写入 SQLite，API 或 Windows 重启后可自动恢复连接。
 - 提供 GitHub Release 更新检查和下载，自动选择与当前进程匹配的 x64/x86 包并校验 SHA-256。
 - 支持配置 GitHub 镜像前缀，例如 `https://v4.gh-proxy.org/`。
 - SDK 健康检查失败时阻止启动 API，避免服务启动后才在设备连接时失败。
@@ -114,6 +117,43 @@ https://v4.gh-proxy.org/https://api.github.com/repos/NicoChiGu/zkteco-realy/rele
 ```
 
 留空 `ZKTECO_GITHUB_PROXY` 时直接连接 GitHub。下载完成后管理器不会自动覆盖正在运行的文件，而是保存 ZIP 并提示退出程序后手动解压覆盖。
+
+## 设备配置持久化与自动重连
+
+设备通过 `POST /api/v1/devices/{deviceId}/connect` 连接时，会自动写入 SQLite。默认数据库位置：
+
+```text
+data/zkteco-relay.db
+```
+
+也可通过环境变量指定：
+
+```dotenv
+ZKTECO_DATABASE_PATH=D:\ZktecoRelayData\zkteco-relay.db
+```
+
+设备通信密码使用 Windows DPAPI 的本机范围加密后保存，不以明文写入数据库。数据库文件复制到另一台 Windows 主机后不能直接解密原密码。
+
+服务启动时会读取 `autoConnect=true` 的设备配置，并逐台尝试连接。某台设备离线不会阻止 API 服务启动。
+
+显式调用断开接口会将该设备的自动连接关闭：
+
+```http
+POST /api/v1/devices/{deviceId}/disconnect
+```
+
+再次调用连接接口会重新启用自动连接。
+
+设备配置接口：
+
+```text
+GET    /api/v1/device-configurations
+GET    /api/v1/device-configurations/{deviceId}
+PUT    /api/v1/device-configurations/{deviceId}
+DELETE /api/v1/device-configurations/{deviceId}
+```
+
+配置查询不会返回设备通信密码，只返回 `hasCommunicationPassword`。
 
 ## 命令行服务配置
 

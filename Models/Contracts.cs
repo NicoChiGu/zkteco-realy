@@ -7,6 +7,12 @@ public sealed record ConnectDeviceRequest(
     int Port = 4370,
     string? CommunicationPassword = null);
 
+public sealed record UpdateDeviceConfigurationRequest(
+    string IpAddress,
+    int Port = 4370,
+    string? CommunicationPassword = null,
+    bool AutoConnect = true);
+
 public sealed record DeviceConnectionResult(
     string DeviceId,
     bool Connected,

@@ -3,6 +3,7 @@ using System.Text;
 using ZktecoRelay.Configuration;
 using ZktecoRelay.Devices;
 using ZktecoRelay.Models;
+using ZktecoRelay.Persistence;
 
 namespace ZktecoRelay.Hosting;
 
@@ -16,7 +17,9 @@ public static partial class RelayApplication
         DotEnv.Load(Path.Combine(AppContext.BaseDirectory, ".env"));
 
         var builder = WebApplication.CreateBuilder(args);
+        builder.Services.AddSingleton<DeviceConfigurationStore>();
         builder.Services.AddSingleton<DeviceManager>();
+        builder.Services.AddHostedService<DeviceAutoConnectService>();
         builder.Services.AddHealthChecks();
 
         var bindUrl = overrides?.BindUrl
@@ -68,6 +71,7 @@ public static partial class RelayApplication
 
         app.MapHealthChecks("/health");
         MapDeviceEndpoints(app);
+        MapDeviceConfigurationEndpoints(app);
         MapExtendedEndpoints(app);
         return app;
     }

@@ -1,12 +1,19 @@
 using System.Collections.Concurrent;
 using System.Net;
 using ZktecoRelay.Models;
+using ZktecoRelay.Persistence;
 
 namespace ZktecoRelay.Devices;
 
 public sealed class DeviceManager : IDisposable
 {
     private readonly ConcurrentDictionary<string, DeviceSession> _sessions = new(StringComparer.OrdinalIgnoreCase);
+    private readonly DeviceConfigurationStore _configurationStore;
+
+    public DeviceManager(DeviceConfigurationStore configurationStore)
+    {
+        _configurationStore = configurationStore;
+    }
 
     public IReadOnlyCollection<DeviceStatus> GetStatuses() =>
         _sessions.Values.Select(session => session.GetStatus()).OrderBy(status => status.DeviceId).ToArray();
@@ -20,7 +27,29 @@ public sealed class DeviceManager : IDisposable
         CancellationToken cancellationToken)
     {
         Validate(deviceId, request);
+        _configurationStore.Upsert(
+            deviceId,
+            request.IpAddress,
+            request.Port,
+            request.CommunicationPassword ?? string.Empty,
+            autoConnect: true);
 
+        return await ConnectCoreAsync(deviceId, request, cancellationToken);
+    }
+
+    public Task<DeviceConnectionResult> RestoreAsync(
+        DeviceConfiguration configuration,
+        CancellationToken cancellationToken) =>
+        ConnectCoreAsync(
+            configuration.DeviceId,
+            new ConnectDeviceRequest(configuration.IpAddress, configuration.Port, configuration.CommunicationPassword),
+            cancellationToken);
+
+    private async Task<DeviceConnectionResult> ConnectCoreAsync(
+        string deviceId,
+        ConnectDeviceRequest request,
+        CancellationToken cancellationToken)
+    {
         if (_sessions.TryGetValue(deviceId, out var existing))
         {
             if (!string.Equals(existing.IpAddress, request.IpAddress, StringComparison.OrdinalIgnoreCase) ||
@@ -41,6 +70,8 @@ public sealed class DeviceManager : IDisposable
 
     public async Task<bool> DisconnectAsync(string deviceId, CancellationToken cancellationToken)
     {
+        _configurationStore.SetAutoConnect(deviceId, enabled: false);
+
         if (!_sessions.TryRemove(deviceId, out var session))
         {
             return false;
@@ -57,6 +88,22 @@ public sealed class DeviceManager : IDisposable
 
         return true;
     }
+
+    public IReadOnlyList<DeviceConfigurationView> GetConfigurations() => _configurationStore.GetViews();
+
+    public DeviceConfigurationView? GetConfiguration(string deviceId) =>
+        _configurationStore.GetViews().FirstOrDefault(configuration =>
+            string.Equals(configuration.DeviceId, deviceId, StringComparison.OrdinalIgnoreCase));
+
+    public void UpsertConfiguration(string deviceId, UpdateDeviceConfigurationRequest request)
+    {
+        Validate(deviceId, new ConnectDeviceRequest(request.IpAddress, request.Port, request.CommunicationPassword));
+        var existing = _configurationStore.Get(deviceId);
+        var password = request.CommunicationPassword ?? existing?.CommunicationPassword ?? string.Empty;
+        _configurationStore.Upsert(deviceId, request.IpAddress, request.Port, password, request.AutoConnect);
+    }
+
+    public bool DeleteConfiguration(string deviceId) => _configurationStore.Delete(deviceId);
 
     public Task<IReadOnlyList<AttendanceRecord>> ReadAttendanceAsync(
         string deviceId,

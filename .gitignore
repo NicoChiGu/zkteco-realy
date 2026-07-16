@@ -6,3 +6,7 @@ publish/
 *.suo
 *.log
 sdk/*.dll
+data/
+*.db
+*.db-shm
+*.db-wal

@@ -20,6 +20,10 @@ public sealed class MainForm : Form
     private readonly TextBox _updateRepository = new() { Width = 300, Text = "NicoChiGu/zkteco-realy" };
     private readonly TextBox _githubProxy = new() { Width = 430, PlaceholderText = "例如：https://v4.gh-proxy.org/" };
     private readonly Button _checkUpdate = new() { Text = "检查更新", AutoSize = true };
+    private readonly TextBox _databasePath = new() { Width = 430, PlaceholderText = "留空使用 data\\zkteco-relay.db" };
+    private readonly CheckBox _minimizeToTray = new() { Text = "最小化或关闭时隐藏到系统托盘", AutoSize = true, Checked = true };
+    private readonly NotifyIcon _trayIcon = new() { Text = "ZKTeco Relay", Visible = true, Icon = SystemIcons.Application };
+    private readonly ContextMenuStrip _trayMenu = new();
     private readonly Label _versionStatus = new() { Text = $"当前版本：{GitHubUpdateService.CurrentVersion}", AutoSize = true };
     private readonly Label _sdkStatus = new() { Text = "SDK 状态：尚未检查", AutoSize = true };
     private readonly Label _status = new() { Text = "状态：已停止", AutoSize = true };
@@ -32,6 +36,7 @@ public sealed class MainForm : Form
     };
 
     private WebApplication? _application;
+    private bool _exitRequested;
 
     public MainForm()
     {
@@ -75,6 +80,9 @@ public sealed class MainForm : Form
         settings.Controls.Add(_updateRepository, 1, 4);
         settings.Controls.Add(new Label { Text = "GitHub 镜像", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 5);
         settings.Controls.Add(_githubProxy, 1, 5);
+        settings.Controls.Add(new Label { Text = "SQLite 路径", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 6);
+        settings.Controls.Add(_databasePath, 1, 6);
+        settings.Controls.Add(_minimizeToTray, 1, 7);
 
         var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top };
         actions.Controls.AddRange([_save, _checkSdk, _checkUpdate, _start, _stop, _openHealth]);
@@ -104,7 +112,10 @@ public sealed class MainForm : Form
         _openHealth.Click += (_, _) => OpenHealthPage();
         _checkSdk.Click += (_, _) => CheckSdkHealth(showDialog: true);
         _checkUpdate.Click += async (_, _) => await CheckForUpdatesAsync();
+        Resize += OnResize;
         FormClosing += OnFormClosing;
+
+        ConfigureTrayMenu();
 
         LoadConfiguration();
         CheckSdkHealth(showDialog: false);
@@ -131,6 +142,17 @@ public sealed class MainForm : Form
         if (values.TryGetValue("ZKTECO_GITHUB_PROXY", out var proxy))
         {
             _githubProxy.Text = proxy;
+        }
+
+        if (values.TryGetValue("ZKTECO_DATABASE_PATH", out var databasePath))
+        {
+            _databasePath.Text = databasePath;
+        }
+
+        if (values.TryGetValue("ZKTECO_MINIMIZE_TO_TRAY", out var minimizeToTray) &&
+            bool.TryParse(minimizeToTray, out var minimizeEnabled))
+        {
+            _minimizeToTray.Checked = minimizeEnabled;
         }
 
         if (values.TryGetValue("ZKTECO_BIND_URL", out var bindUrl) && Uri.TryCreate(bindUrl, UriKind.Absolute, out var uri))
@@ -160,8 +182,13 @@ public sealed class MainForm : Form
             ["ZKTECO_API_KEY"] = key,
             ["ZKTECO_BIND_URL"] = BindUrl,
             ["ZKTECO_UPDATE_REPOSITORY"] = _updateRepository.Text.Trim(),
-            ["ZKTECO_GITHUB_PROXY"] = _githubProxy.Text.Trim()
+            ["ZKTECO_GITHUB_PROXY"] = _githubProxy.Text.Trim(),
+            ["ZKTECO_DATABASE_PATH"] = _databasePath.Text.Trim(),
+            ["ZKTECO_MINIMIZE_TO_TRAY"] = _minimizeToTray.Checked.ToString().ToLowerInvariant()
         });
+
+        Environment.SetEnvironmentVariable("ZKTECO_DATABASE_PATH", _databasePath.Text.Trim());
+        Environment.SetEnvironmentVariable("ZKTECO_MINIMIZE_TO_TRAY", _minimizeToTray.Checked.ToString().ToLowerInvariant());
 
         AppendLog($"配置已保存，监听地址：{BindUrl}");
         if (showMessage)
@@ -209,6 +236,7 @@ public sealed class MainForm : Form
             _generateKey.Enabled = false;
             _updateRepository.Enabled = false;
             _githubProxy.Enabled = false;
+            _databasePath.Enabled = false;
             AppendLog("API 已启动。除 /health 外，所有请求必须携带 X-API-Key。" );
         }
         catch (Exception ex)
@@ -260,6 +288,7 @@ public sealed class MainForm : Form
             _generateKey.Enabled = true;
             _updateRepository.Enabled = true;
             _githubProxy.Enabled = true;
+            _databasePath.Enabled = true;
             SetBusy(false);
         }
     }
@@ -389,17 +418,89 @@ public sealed class MainForm : Form
         _checkUpdate.Enabled = !busy;
     }
 
+    private void ConfigureTrayMenu()
+    {
+        var showItem = new ToolStripMenuItem("显示管理器", null, (_, _) => RestoreFromTray());
+        var startItem = new ToolStripMenuItem("启动 API", null, async (_, _) => await StartApiAsync());
+        var stopItem = new ToolStripMenuItem("停止 API", null, async (_, _) => await StopApiAsync());
+        var healthItem = new ToolStripMenuItem("打开健康检查", null, (_, _) => OpenHealthPage());
+        var exitItem = new ToolStripMenuItem("退出程序", null, async (_, _) => await ExitApplicationAsync());
+
+        _trayMenu.Items.AddRange([
+            showItem,
+            new ToolStripSeparator(),
+            startItem,
+            stopItem,
+            healthItem,
+            new ToolStripSeparator(),
+            exitItem
+        ]);
+        _trayMenu.Opening += (_, _) =>
+        {
+            startItem.Enabled = _application is null;
+            stopItem.Enabled = _application is not null;
+            healthItem.Enabled = _application is not null;
+        };
+
+        _trayIcon.ContextMenuStrip = _trayMenu;
+        _trayIcon.DoubleClick += (_, _) => RestoreFromTray();
+    }
+
+    private void OnResize(object? sender, EventArgs e)
+    {
+        if (WindowState == FormWindowState.Minimized && _minimizeToTray.Checked)
+        {
+            HideToTray();
+        }
+    }
+
+    private void HideToTray()
+    {
+        Hide();
+        ShowInTaskbar = false;
+        _trayIcon.Visible = true;
+        _trayIcon.ShowBalloonTip(1500, "ZKTeco Relay", "管理器仍在系统托盘中运行。", ToolTipIcon.Info);
+    }
+
+    private void RestoreFromTray()
+    {
+        ShowInTaskbar = true;
+        Show();
+        WindowState = FormWindowState.Normal;
+        Activate();
+    }
+
     private async void OnFormClosing(object? sender, FormClosingEventArgs e)
     {
-        if (_application is null)
+        if (!_exitRequested && _minimizeToTray.Checked)
         {
+            e.Cancel = true;
+            HideToTray();
             return;
         }
 
-        e.Cancel = true;
-        Enabled = false;
-        await StopApiAsync();
-        FormClosing -= OnFormClosing;
+        if (_application is not null)
+        {
+            e.Cancel = true;
+            Enabled = false;
+            await StopApiAsync();
+            FormClosing -= OnFormClosing;
+            _trayIcon.Visible = false;
+            _trayIcon.Dispose();
+            _trayMenu.Dispose();
+            Close();
+        }
+    }
+
+    private async Task ExitApplicationAsync()
+    {
+        _exitRequested = true;
+        if (_application is not null)
+        {
+            await StopApiAsync();
+        }
+
+        _trayIcon.Visible = false;
         Close();
     }
 

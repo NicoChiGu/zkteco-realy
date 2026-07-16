@@ -9,6 +9,9 @@
     <RootNamespace>ZktecoRelay</RootNamespace>
   </PropertyGroup>
   <ItemGroup>
+    <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.14" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Remove="Manager\**\*.cs" />
     <EmbeddedResource Remove="Manager\**\*" />
     <None Remove="Manager\**\*" />
