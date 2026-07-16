@@ -113,7 +113,31 @@ jobs:
           if (-not (Test-Path $manager)) { throw "Manager executable was not produced: $manager" }
           Get-Item $api, $manager | Select-Object FullName, Length
 
-      - name: Create release archive and checksum
+      - name: Install Inno Setup
+        shell: pwsh
+        run: choco install innosetup --yes --no-progress
+
+      - name: Build Windows installer
+        shell: pwsh
+        run: |
+          $source = (Resolve-Path ".\artifacts\${{ matrix.runtime }}").Path
+          $releaseDir = (New-Item -ItemType Directory -Force -Path ".\release").FullName
+          $compiler = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+          & $compiler `
+            "/DAppVersion=$env:APP_VERSION" `
+            "/DSourceDir=$source" `
+            "/DArchitecture=${{ matrix.platform }}" `
+            "/DOutputDir=$releaseDir" `
+            ".\installer\ZktecoRelay.iss"
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
+
+          $installer = "$releaseDir\zkteco-relay-${{ matrix.runtime }}-setup.exe"
+          if (-not (Test-Path $installer)) { throw "Installer was not produced: $installer" }
+          $hash = (Get-FileHash -Path $installer -Algorithm SHA256).Hash
+          "$hash  $(Split-Path $installer -Leaf)" | Set-Content -Path "$installer.sha256" -Encoding ascii
+          Get-Item $installer, "$installer.sha256" | Select-Object FullName, Length
+
+      - name: Create portable archive and checksum
         shell: pwsh
         run: |
           $source = ".\artifacts\${{ matrix.runtime }}"
@@ -130,6 +154,8 @@ jobs:
         with:
           name: zkteco-relay-${{ matrix.runtime }}
           path: |
+            .\release\zkteco-relay-${{ matrix.runtime }}-setup.exe
+            .\release\zkteco-relay-${{ matrix.runtime }}-setup.exe.sha256
             .\release\zkteco-relay-${{ matrix.runtime }}.zip
             .\release\zkteco-relay-${{ matrix.runtime }}.zip.sha256
           if-no-files-found: error
@@ -157,6 +183,10 @@ jobs:
           generate_release_notes: true
           fail_on_unmatched_files: true
           files: |
+            release-assets/zkteco-relay-win-x64-setup.exe
+            release-assets/zkteco-relay-win-x64-setup.exe.sha256
+            release-assets/zkteco-relay-win-x86-setup.exe
+            release-assets/zkteco-relay-win-x86-setup.exe.sha256
             release-assets/zkteco-relay-win-x64.zip
             release-assets/zkteco-relay-win-x64.zip.sha256
             release-assets/zkteco-relay-win-x86.zip

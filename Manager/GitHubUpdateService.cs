@@ -1,5 +1,4 @@
 using System.Diagnostics;
-using System.IO.Compression;
 using System.Net.Http.Headers;
 using System.Reflection;
 using System.Security.Cryptography;
@@ -56,7 +55,7 @@ internal static class GitHubUpdateService
 
         var latestVersion = ParseVersion(release.TagName);
         var architecture = Environment.Is64BitProcess ? "win-x64" : "win-x86";
-        var packageName = $"zkteco-relay-{architecture}.zip";
+        var packageName = $"zkteco-relay-{architecture}-setup.exe";
         var checksumName = packageName + ".sha256";
 
         var package = release.Assets.FirstOrDefault(asset =>
@@ -126,6 +125,20 @@ internal static class GitHubUpdateService
 
     public static void OpenReleasePage(UpdateInfo update) =>
         Process.Start(new ProcessStartInfo(update.ReleasePageUrl) { UseShellExecute = true });
+
+    public static void LaunchInstaller(string installerPath)
+    {
+        if (!File.Exists(installerPath))
+        {
+            throw new FileNotFoundException("安装程序不存在。", installerPath);
+        }
+
+        Process.Start(new ProcessStartInfo(installerPath)
+        {
+            UseShellExecute = true,
+            WorkingDirectory = Path.GetDirectoryName(installerPath) ?? AppContext.BaseDirectory
+        });
+    }
 
     private static async Task DownloadFileAsync(
         string url,

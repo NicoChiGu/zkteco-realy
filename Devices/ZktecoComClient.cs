@@ -1,4 +1,5 @@
 using ZktecoRelay.Models;
+using ZktecoRelay.Realtime;
 
 namespace ZktecoRelay.Devices;
 
@@ -6,10 +7,14 @@ internal sealed partial class ZktecoComClient : IDisposable
 {
     private const int MachineNumber = 1;
     private readonly dynamic _sdk;
+    private readonly string _deviceId;
+    private readonly Action<RealtimeEvent>? _eventSink;
     private bool _disposed;
 
-    public ZktecoComClient()
+    public ZktecoComClient(string deviceId, Action<RealtimeEvent>? eventSink = null)
     {
+        _deviceId = deviceId;
+        _eventSink = eventSink;
         var comType = Type.GetTypeFromProgID("zkemkeeper.ZKEM.1", throwOnError: false)
                       ?? Type.GetTypeFromProgID("zkemkeeper.ZKEM", throwOnError: false)
                       ?? throw new InvalidOperationException(
@@ -123,6 +128,7 @@ internal sealed partial class ZktecoComClient : IDisposable
 
         try
         {
+            UnregisterRealtimeEvents();
             _sdk.Disconnect();
         }
         catch

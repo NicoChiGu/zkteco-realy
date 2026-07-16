@@ -1,5 +1,7 @@
 using System.Collections.Concurrent;
+using System.Runtime.InteropServices;
 using ZktecoRelay.Models;
+using ZktecoRelay.Realtime;
 
 namespace ZktecoRelay.Devices;
 
@@ -7,11 +9,13 @@ internal sealed class DeviceSession : IDisposable
 {
     private readonly BlockingCollection<Action> _queue = new();
     private readonly Thread _staThread;
+    private readonly RealtimeEventHub _eventHub;
     private ZktecoComClient? _client;
     private bool _disposed;
 
-    public DeviceSession(string deviceId, string ipAddress, int port)
+    public DeviceSession(string deviceId, string ipAddress, int port, RealtimeEventHub eventHub)
     {
+        _eventHub = eventHub;
         DeviceId = deviceId;
         IpAddress = ipAddress;
         Port = port;
@@ -36,9 +40,25 @@ internal sealed class DeviceSession : IDisposable
         InvokeAsync(() =>
         {
             _client?.Dispose();
-            _client = new ZktecoComClient();
+            _client = new ZktecoComClient(DeviceId, _eventHub.Publish);
 
             var connected = _client.Connect(IpAddress, Port, password);
+            if (connected)
+            {
+                try
+                {
+                    _client.RegisterRealtimeEvents();
+                }
+                catch (Exception ex)
+                {
+                    _eventHub.Publish(new RealtimeEvent(
+                        Guid.NewGuid().ToString("N"),
+                        DeviceId,
+                        "events_registration_failed",
+                        DateTimeOffset.UtcNow,
+                        new Dictionary<string, object?> { ["message"] = ex.Message }));
+                }
+            }
             int? vendorError = connected ? null : _client.GetLastError();
             Connected = connected;
             ConnectedAt = connected ? DateTimeOffset.Now : null;
@@ -138,13 +158,61 @@ internal sealed class DeviceSession : IDisposable
 
     private void Run()
     {
-        foreach (var operation in _queue.GetConsumingEnumerable())
+        while (!_queue.IsCompleted)
         {
-            operation();
+            if (_queue.TryTake(out var operation, 25))
+            {
+                operation();
+            }
+
+            PumpWindowsMessages();
+        }
+
+        while (_queue.TryTake(out var pending))
+        {
+            pending();
         }
 
         _client?.Dispose();
     }
+
+    private static void PumpWindowsMessages()
+    {
+        while (PeekMessage(out var message, IntPtr.Zero, 0, 0, 1))
+        {
+            TranslateMessage(ref message);
+            DispatchMessage(ref message);
+        }
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativeMessage
+    {
+        public IntPtr HWnd;
+        public uint Message;
+        public UIntPtr WParam;
+        public IntPtr LParam;
+        public uint Time;
+        public NativePoint Point;
+    }
+
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool PeekMessage(out NativeMessage message, IntPtr window, uint minFilter, uint maxFilter, uint removeMessage);
+
+    [DllImport("user32.dll")]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool TranslateMessage(ref NativeMessage message);
+
+    [DllImport("user32.dll")]
+    private static extern IntPtr DispatchMessage(ref NativeMessage message);
 
     private void EnsureConnected()
     {

@@ -4,6 +4,7 @@
 
 - 详细 API 请求、响应与接入示例：[`docs/API.md`](docs/API.md)
 - OpenAPI 3.0 定义：[`docs/openapi.yaml`](docs/openapi.yaml)
+- 实时事件 WebSocket：[`docs/REALTIME_EVENTS.md`](docs/REALTIME_EVENTS.md)
 - 人员、生物特征与门禁扩展接口：[`docs/EXTENDED_API.md`](docs/EXTENDED_API.md)
 
 
@@ -60,6 +61,10 @@ scripts/install-sdk-x64.ps1 或 scripts/install-sdk-x86.ps1
 推送 `v*` 标签时，工作流还会自动创建 GitHub Release，并上传：
 
 ```text
+zkteco-relay-win-x64-setup.exe
+zkteco-relay-win-x64-setup.exe.sha256
+zkteco-relay-win-x86-setup.exe
+zkteco-relay-win-x86-setup.exe.sha256
 zkteco-relay-win-x64.zip
 zkteco-relay-win-x64.zip.sha256
 zkteco-relay-win-x86.zip
@@ -116,7 +121,7 @@ ZKTECO_GITHUB_PROXY=https://v4.gh-proxy.org/
 https://v4.gh-proxy.org/https://api.github.com/repos/NicoChiGu/zkteco-realy/releases/latest
 ```
 
-留空 `ZKTECO_GITHUB_PROXY` 时直接连接 GitHub。下载完成后管理器不会自动覆盖正在运行的文件，而是保存 ZIP 并提示退出程序后手动解压覆盖。
+留空 `ZKTECO_GITHUB_PROXY` 时直接连接 GitHub。管理器会优先下载与当前架构匹配的 `setup.exe`，验证 SHA-256 后启动安装程序，停止内置 API 并退出当前版本。安装程序完成覆盖升级，同时保留已有 `.env` 与 SQLite 数据库。
 
 ## 设备配置持久化与自动重连
 
@@ -253,6 +258,7 @@ POST /api/v1/devices/{deviceId}/connect
 POST /api/v1/devices/{deviceId}/disconnect
 GET  /api/v1/devices/{deviceId}/attendance
 POST /api/v1/devices/{deviceId}/restart
+GET  /api/v1/events/ws                 WebSocket 实时事件
 GET/PUT/DELETE /api/v1/devices/{deviceId}/users/...
 GET/PUT/DELETE /api/v1/devices/{deviceId}/users/{enrollNumber}/fingerprints/...
 GET/PUT/DELETE /api/v1/devices/{deviceId}/users/{enrollNumber}/face

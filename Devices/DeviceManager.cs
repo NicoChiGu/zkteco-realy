@@ -2,6 +2,7 @@ using System.Collections.Concurrent;
 using System.Net;
 using ZktecoRelay.Models;
 using ZktecoRelay.Persistence;
+using ZktecoRelay.Realtime;
 
 namespace ZktecoRelay.Devices;
 
@@ -9,10 +10,12 @@ public sealed class DeviceManager : IDisposable
 {
     private readonly ConcurrentDictionary<string, DeviceSession> _sessions = new(StringComparer.OrdinalIgnoreCase);
     private readonly DeviceConfigurationStore _configurationStore;
+    private readonly RealtimeEventHub _eventHub;
 
-    public DeviceManager(DeviceConfigurationStore configurationStore)
+    public DeviceManager(DeviceConfigurationStore configurationStore, RealtimeEventHub eventHub)
     {
         _configurationStore = configurationStore;
+        _eventHub = eventHub;
     }
 
     public IReadOnlyCollection<DeviceStatus> GetStatuses() =>
@@ -63,7 +66,7 @@ public sealed class DeviceManager : IDisposable
 
         var session = _sessions.GetOrAdd(
             deviceId,
-            _ => new DeviceSession(deviceId, request.IpAddress, request.Port));
+            _ => new DeviceSession(deviceId, request.IpAddress, request.Port, _eventHub));
 
         return await session.ConnectAsync(request.CommunicationPassword ?? string.Empty, cancellationToken);
     }

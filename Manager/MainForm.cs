@@ -388,15 +388,23 @@ public sealed class MainForm : Form
             _versionStatus.Text = $"更新包已下载：{update.TagName}";
             AppendLog($"更新包已下载并通过校验：{savedPath}" );
 
-            var openFolder = MessageBox.Show(
+            var install = MessageBox.Show(
                 this,
-                $"更新包已下载并通过 SHA-256 校验：\n{savedPath}\n\n请停止 API、退出管理器后解压覆盖。是否打开所在目录？",
-                "下载完成",
+                $"安装程序已下载并通过 SHA-256 校验：\n{savedPath}\n\n是否立即启动安装程序？安装程序会关闭当前版本并完成覆盖升级。",
+                "更新已就绪",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Information);
-            if (openFolder == DialogResult.Yes)
+            if (install == DialogResult.Yes)
             {
-                Process.Start(new ProcessStartInfo("explorer.exe", $"/select,\"{savedPath}\"") { UseShellExecute = true });
+                if (_application is not null)
+                {
+                    await StopApiAsync();
+                }
+
+                GitHubUpdateService.LaunchInstaller(savedPath);
+                _allowExit = true;
+                _trayIcon.Visible = false;
+                Close();
             }
         }
         catch (Exception ex)

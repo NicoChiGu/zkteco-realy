@@ -3,6 +3,7 @@ using System.Text;
 using ZktecoRelay.Configuration;
 using ZktecoRelay.Devices;
 using ZktecoRelay.Models;
+using ZktecoRelay.Realtime;
 using ZktecoRelay.Persistence;
 
 namespace ZktecoRelay.Hosting;
@@ -18,6 +19,7 @@ public static partial class RelayApplication
 
         var builder = WebApplication.CreateBuilder(args);
         builder.Services.AddSingleton<DeviceConfigurationStore>();
+        builder.Services.AddSingleton<RealtimeEventHub>();
         builder.Services.AddSingleton<DeviceManager>();
         builder.Services.AddHostedService<DeviceAutoConnectService>();
         builder.Services.AddHealthChecks();
@@ -45,14 +47,18 @@ public static partial class RelayApplication
                 return;
             }
 
-            if (!context.Request.Headers.TryGetValue("X-API-Key", out var suppliedValues))
+            var suppliedApiKey = context.Request.Headers.TryGetValue("X-API-Key", out var suppliedValues)
+                ? suppliedValues.ToString()
+                : context.Request.Path.StartsWithSegments("/api/v1/events/ws")
+                    ? context.Request.Query["apiKey"].ToString()
+                    : string.Empty;
+
+            if (string.IsNullOrEmpty(suppliedApiKey))
             {
                 context.Response.StatusCode = StatusCodes.Status401Unauthorized;
                 await context.Response.WriteAsJsonAsync(new ApiError("missing_api_key", "X-API-Key header is required."));
                 return;
             }
-
-            var suppliedApiKey = suppliedValues.ToString();
             var expectedBytes = Encoding.UTF8.GetBytes(configuredApiKey);
             var suppliedBytes = Encoding.UTF8.GetBytes(suppliedApiKey);
 
@@ -69,10 +75,16 @@ public static partial class RelayApplication
             await next();
         });
 
+        app.UseWebSockets(new WebSocketOptions
+        {
+            KeepAliveInterval = TimeSpan.FromSeconds(30)
+        });
+
         app.MapHealthChecks("/health");
         MapDeviceEndpoints(app);
         MapDeviceConfigurationEndpoints(app);
         MapExtendedEndpoints(app);
+        MapRealtimeEndpoints(app);
         return app;
     }
 
