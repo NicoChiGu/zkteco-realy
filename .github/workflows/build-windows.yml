@@ -1,0 +1,98 @@
+name: Build Windows executables
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main, master]
+    tags: ['v*']
+  pull_request:
+    branches: [main, master]
+
+permissions:
+  contents: read
+
+jobs:
+  publish:
+    name: Publish ${{ matrix.runtime }}
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runtime: win-x64
+            platform: x64
+            sdk_script: install-sdk-x64.ps1
+          - runtime: win-x86
+            platform: x86
+            sdk_script: install-sdk-x86.ps1
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: 8.0.x
+
+      - name: Restore API
+        run: dotnet restore .\ZktecoRelay.csproj -r ${{ matrix.runtime }}
+
+      - name: Restore manager
+        run: dotnet restore .\Manager\ZktecoRelay.Manager.csproj -r ${{ matrix.runtime }}
+
+      - name: Publish API executable
+        shell: pwsh
+        run: |
+          dotnet publish .\ZktecoRelay.csproj `
+            -c Release `
+            -r ${{ matrix.runtime }} `
+            --self-contained true `
+            --no-restore `
+            -p:PlatformTarget=${{ matrix.platform }} `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o .\artifacts\${{ matrix.runtime }}\api
+
+      - name: Publish graphical manager
+        shell: pwsh
+        run: |
+          dotnet publish .\Manager\ZktecoRelay.Manager.csproj `
+            -c Release `
+            -r ${{ matrix.runtime }} `
+            --self-contained true `
+            --no-restore `
+            -p:PlatformTarget=${{ matrix.platform }} `
+            -p:PublishSingleFile=true `
+            -p:IncludeNativeLibrariesForSelfExtract=true `
+            -p:DebugType=None `
+            -p:DebugSymbols=false `
+            -o .\artifacts\${{ matrix.runtime }}\manager
+
+      - name: Add deployment files
+        shell: pwsh
+        run: |
+          $root = ".\artifacts\${{ matrix.runtime }}"
+          Copy-Item .\.env.example "$root\.env.example"
+          Copy-Item .\README.md "$root\README.md"
+          New-Item -ItemType Directory -Force -Path "$root\scripts" | Out-Null
+          Copy-Item ".\scripts\${{ matrix.sdk_script }}" "$root\scripts\${{ matrix.sdk_script }}"
+
+      - name: Verify executables
+        shell: pwsh
+        run: |
+          $api = ".\artifacts\${{ matrix.runtime }}\api\ZktecoRelay.exe"
+          $manager = ".\artifacts\${{ matrix.runtime }}\manager\ZktecoRelay.Manager.exe"
+          if (-not (Test-Path $api)) { throw "API executable was not produced: $api" }
+          if (-not (Test-Path $manager)) { throw "Manager executable was not produced: $manager" }
+          Get-Item $api, $manager | Select-Object FullName, Length
+
+      - name: Upload Windows package
+        uses: actions/upload-artifact@v4
+        with:
+          name: zkteco-relay-${{ matrix.runtime }}
+          path: .\artifacts\${{ matrix.runtime }}
+          if-no-files-found: error
+          retention-days: 30
