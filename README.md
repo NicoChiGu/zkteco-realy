@@ -1,5 +1,11 @@
 # ZKTeco Relay
 
+## 开发文档
+
+- 详细 API 请求、响应与接入示例：[`docs/API.md`](docs/API.md)
+- OpenAPI 3.0 定义：[`docs/openapi.yaml`](docs/openapi.yaml)
+
+
 基于 C#、ASP.NET Core 和 Windows COM 的 ZKTeco 脱机通讯 REST 中继。
 
 项目提供两种启动方式：

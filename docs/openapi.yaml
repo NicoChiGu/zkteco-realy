@@ -1,0 +1,284 @@
+openapi: 3.0.3
+info:
+  title: ZKTeco Relay API
+  version: 1.0.0
+  description: Windows ZKTeco offline communication relay REST API.
+servers:
+  - url: http://127.0.0.1:5080
+security:
+  - ApiKeyAuth: []
+paths:
+  /health:
+    get:
+      summary: Health check
+      security: []
+      responses:
+        '200':
+          description: Service is healthy
+          content:
+            text/plain:
+              schema:
+                type: string
+              example: Healthy
+  /api/v1/devices:
+    get:
+      summary: List device sessions
+      responses:
+        '200':
+          description: Device status list
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeviceStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/devices/{deviceId}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      summary: Get device status
+      responses:
+        '200':
+          description: Device status
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceStatus'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+  /api/v1/devices/{deviceId}/connect:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      summary: Connect to a ZKTeco device
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectDeviceRequest'
+            example:
+              ipAddress: 192.168.1.100
+              port: 4370
+              communicationPassword: ''
+      responses:
+        '200':
+          description: Connected successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceConnectionResult'
+              example:
+                deviceId: office-gate-01
+                connected: true
+                error: null
+                vendorErrorCode: null
+        '400':
+          description: Invalid request or device connection failed
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ApiError'
+                  - $ref: '#/components/schemas/DeviceConnectionResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/devices/{deviceId}/disconnect:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      summary: Disconnect and remove a device session
+      responses:
+        '200':
+          description: Disconnected
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, connected]
+                properties:
+                  deviceId:
+                    type: string
+                  connected:
+                    type: boolean
+                    enum: [false]
+              example:
+                deviceId: office-gate-01
+                connected: false
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+  /api/v1/devices/{deviceId}/attendance:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      summary: Read all general attendance records from a connected device
+      responses:
+        '200':
+          description: Attendance records
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/AttendanceRecord'
+              example:
+                - enrollNumber: '10001'
+                  verifyMode: 1
+                  inOutMode: 0
+                  timestamp: '2026-07-16T08:31:12+08:00'
+                  workCode: 0
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceUnavailable'
+  /api/v1/devices/{deviceId}/restart:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      summary: Restart a connected device
+      responses:
+        '202':
+          description: Restart command accepted
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [deviceId, restarted]
+                properties:
+                  deviceId:
+                    type: string
+                  restarted:
+                    type: boolean
+              example:
+                deviceId: office-gate-01
+                restarted: true
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceUnavailable'
+components:
+  securitySchemes:
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+  parameters:
+    DeviceId:
+      name: deviceId
+      in: path
+      required: true
+      description: Caller-defined stable identifier for one physical device.
+      schema:
+        type: string
+        maxLength: 64
+      example: office-gate-01
+  responses:
+    Unauthorized:
+      description: Missing or invalid API key
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    DeviceNotFound:
+      description: Device session was not found
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: device_not_found
+            message: Device was not found.
+    DeviceUnavailable:
+      description: Device session exists but is not connected
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+          example:
+            code: device_unavailable
+            message: Device 'office-gate-01' is not connected.
+  schemas:
+    ApiError:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    ConnectDeviceRequest:
+      type: object
+      required: [ipAddress]
+      properties:
+        ipAddress:
+          type: string
+          description: IPv4 or IPv6 address of the device.
+        port:
+          type: integer
+          minimum: 1
+          maximum: 65535
+          default: 4370
+        communicationPassword:
+          type: string
+          nullable: true
+          description: Device communication password, not the relay API key.
+    DeviceConnectionResult:
+      type: object
+      required: [deviceId, connected]
+      properties:
+        deviceId:
+          type: string
+        connected:
+          type: boolean
+        error:
+          type: string
+          nullable: true
+        vendorErrorCode:
+          type: integer
+          nullable: true
+    DeviceStatus:
+      type: object
+      required: [deviceId, ipAddress, port, connected]
+      properties:
+        deviceId:
+          type: string
+        ipAddress:
+          type: string
+        port:
+          type: integer
+        connected:
+          type: boolean
+        connectedAt:
+          type: string
+          format: date-time
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+    AttendanceRecord:
+      type: object
+      required: [enrollNumber, verifyMode, inOutMode, timestamp, workCode]
+      properties:
+        enrollNumber:
+          type: string
+        verifyMode:
+          type: integer
+          description: Raw verification mode code from the vendor SDK.
+        inOutMode:
+          type: integer
+          description: Raw attendance/in-out state code from the vendor SDK.
+        timestamp:
+          type: string
+          format: date-time
+        workCode:
+          type: integer
