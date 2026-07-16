@@ -402,7 +402,7 @@ public sealed class MainForm : Form
                 }
 
                 GitHubUpdateService.LaunchInstaller(savedPath);
-                _allowExit = true;
+                _exitRequested = true;
                 _trayIcon.Visible = false;
                 Close();
             }
