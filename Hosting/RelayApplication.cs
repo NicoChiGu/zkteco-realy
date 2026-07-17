@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Security.Cryptography;
 using System.Text;
 using ZktecoRelay.Configuration;
@@ -8,7 +9,11 @@ using ZktecoRelay.Persistence;
 
 namespace ZktecoRelay.Hosting;
 
-public sealed record RelayOverrides(string? BindUrl = null, string? ApiKey = null);
+public sealed record RelayOverrides(
+    string? BindUrl = null,
+    string? ApiKey = null,
+    string? AllowedNetworks = null,
+    Action<string>? RequestLog = null);
 
 public static partial class RelayApplication
 {
@@ -36,16 +41,34 @@ public static partial class RelayApplication
             throw new InvalidOperationException("ZKTECO_API_KEY must be configured and contain at least 16 characters.");
         }
 
+        var allowedNetworks = overrides?.AllowedNetworks
+            ?? Environment.GetEnvironmentVariable("ZKTECO_ALLOWED_NETWORKS");
+        var ipAccessPolicy = IpAccessPolicy.Parse(allowedNetworks);
+        var requestLog = overrides?.RequestLog;
+
         builder.WebHost.UseUrls(bindUrl);
         var app = builder.Build();
 
         app.Use(async (context, next) =>
         {
-            if (context.Request.Path.StartsWithSegments("/health"))
+            var startedAt = Stopwatch.GetTimestamp();
+            var remoteAddress = context.Connection.RemoteIpAddress;
+            var remoteText = remoteAddress?.ToString() ?? "unknown";
+
+            try
             {
-                await next();
-                return;
-            }
+                if (!ipAccessPolicy.IsAllowed(remoteAddress))
+                {
+                    context.Response.StatusCode = StatusCodes.Status403Forbidden;
+                    await context.Response.WriteAsJsonAsync(new ApiError("ip_not_allowed", "The remote IP address is not allowed."));
+                    return;
+                }
+
+                if (context.Request.Path.StartsWithSegments("/health"))
+                {
+                    await next();
+                    return;
+                }
 
             var suppliedApiKey = context.Request.Headers.TryGetValue("X-API-Key", out var suppliedValues)
                 ? suppliedValues.ToString()
@@ -72,7 +95,20 @@ public static partial class RelayApplication
                 return;
             }
 
-            await next();
+                await next();
+            }
+            finally
+            {
+                var elapsed = Stopwatch.GetElapsedTime(startedAt).TotalMilliseconds;
+                try
+                {
+                    requestLog?.Invoke($"HTTP {context.Request.Method} {context.Request.Path} from {remoteText} -> {context.Response.StatusCode} ({elapsed:F0} ms)");
+                }
+                catch
+                {
+                    // Request logging must never affect API responses.
+                }
+            }
         });
 
         app.UseWebSockets(new WebSocketOptions

@@ -92,35 +92,44 @@ internal static class GitHubUpdateService
         var destinationPath = Path.Combine(destinationDirectory, update.Package.Name);
         var temporaryPath = destinationPath + ".download";
 
-        await DownloadFileAsync(
-            ApplyProxy(settings.ProxyPrefix, update.Package.DownloadUrl),
-            temporaryPath,
-            update.Package.Size,
-            progress,
-            cancellationToken);
-
-        if (update.Checksum is not null)
+        try
         {
-            var checksumText = await HttpClient.GetStringAsync(
-                ApplyProxy(settings.ProxyPrefix, update.Checksum.DownloadUrl),
+            await DownloadFileAsync(
+                ApplyProxy(settings.ProxyPrefix, update.Package.DownloadUrl),
+                temporaryPath,
+                update.Package.Size,
+                progress,
                 cancellationToken);
-            var expected = checksumText.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
-            if (string.IsNullOrWhiteSpace(expected))
+
+            if (update.Checksum is not null)
             {
-                throw new InvalidOperationException("SHA-256 校验文件内容无效。" );
+                var checksumText = await HttpClient.GetStringAsync(
+                    ApplyProxy(settings.ProxyPrefix, update.Checksum.DownloadUrl),
+                    cancellationToken);
+                var expected = checksumText.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
+                if (string.IsNullOrWhiteSpace(expected))
+                {
+                    throw new InvalidOperationException("SHA-256 校验文件内容无效。" );
+                }
+
+                await using var file = File.OpenRead(temporaryPath);
+                var actual = Convert.ToHexString(await SHA256.HashDataAsync(file, cancellationToken));
+                if (!string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
+                {
+                    throw new InvalidOperationException("更新包 SHA-256 校验失败，文件可能损坏或被篡改。" );
+                }
             }
 
-            await using var file = File.OpenRead(temporaryPath);
-            var actual = Convert.ToHexString(await SHA256.HashDataAsync(file, cancellationToken));
-            if (!string.Equals(expected, actual, StringComparison.OrdinalIgnoreCase))
+            File.Move(temporaryPath, destinationPath, overwrite: true);
+            return destinationPath;
+        }
+        finally
+        {
+            if (File.Exists(temporaryPath))
             {
                 File.Delete(temporaryPath);
-                throw new InvalidOperationException("更新包 SHA-256 校验失败，文件可能损坏或被篡改。" );
             }
         }
-
-        File.Move(temporaryPath, destinationPath, overwrite: true);
-        return destinationPath;
     }
 
     public static void OpenReleasePage(UpdateInfo update) =>

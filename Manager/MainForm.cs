@@ -20,7 +20,17 @@ public sealed class MainForm : Form
     private readonly TextBox _updateRepository = new() { Width = 300, Text = "NicoChiGu/zkteco-realy" };
     private readonly TextBox _githubProxy = new() { Width = 430, PlaceholderText = "例如：https://v4.gh-proxy.org/" };
     private readonly Button _checkUpdate = new() { Text = "检查更新", AutoSize = true };
+    private readonly Button _cancelUpdate = new() { Text = "取消下载", AutoSize = true, Enabled = false };
     private readonly TextBox _databasePath = new() { Width = 430, PlaceholderText = "留空使用 data\\zkteco-relay.db" };
+    private readonly TextBox _allowedNetworks = new()
+    {
+        Width = 430,
+        Height = 52,
+        Multiline = true,
+        ScrollBars = ScrollBars.Vertical,
+        Text = "127.0.0.1/32, ::1/128",
+        PlaceholderText = "多个 IP/CIDR 用逗号、分号或换行分隔"
+    };
     private readonly CheckBox _minimizeToTray = new() { Text = "最小化或关闭时隐藏到系统托盘", AutoSize = true, Checked = true };
     private readonly NotifyIcon _trayIcon = new() { Text = "ZKTeco Relay", Visible = true, Icon = SystemIcons.Application };
     private readonly ContextMenuStrip _trayMenu = new();
@@ -36,13 +46,14 @@ public sealed class MainForm : Form
     };
 
     private WebApplication? _application;
+    private CancellationTokenSource? _updateDownloadCts;
     private bool _exitRequested;
 
     public MainForm()
     {
         Text = "ZKTeco Relay 管理器";
         Width = 760;
-        Height = 650;
+        Height = 720;
         StartPosition = FormStartPosition.CenterScreen;
         MinimumSize = new Size(680, 440);
 
@@ -82,10 +93,12 @@ public sealed class MainForm : Form
         settings.Controls.Add(_githubProxy, 1, 5);
         settings.Controls.Add(new Label { Text = "SQLite 路径", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 6);
         settings.Controls.Add(_databasePath, 1, 6);
-        settings.Controls.Add(_minimizeToTray, 1, 7);
+        settings.Controls.Add(new Label { Text = "允许访问 IP/网段", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 7);
+        settings.Controls.Add(_allowedNetworks, 1, 7);
+        settings.Controls.Add(_minimizeToTray, 1, 8);
 
         var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top };
-        actions.Controls.AddRange([_save, _checkSdk, _checkUpdate, _start, _stop, _openHealth]);
+        actions.Controls.AddRange([_save, _checkSdk, _checkUpdate, _cancelUpdate, _start, _stop, _openHealth]);
 
         var statuses = new FlowLayoutPanel
         {
@@ -112,6 +125,7 @@ public sealed class MainForm : Form
         _openHealth.Click += (_, _) => OpenHealthPage();
         _checkSdk.Click += (_, _) => CheckSdkHealth(showDialog: true);
         _checkUpdate.Click += async (_, _) => await CheckForUpdatesAsync();
+        _cancelUpdate.Click += (_, _) => _updateDownloadCts?.Cancel();
         Resize += OnResize;
         FormClosing += OnFormClosing;
 
@@ -149,6 +163,13 @@ public sealed class MainForm : Form
             _databasePath.Text = databasePath;
         }
 
+        if (values.TryGetValue("ZKTECO_ALLOWED_NETWORKS", out var allowedNetworks) && !string.IsNullOrWhiteSpace(allowedNetworks))
+        {
+            _allowedNetworks.Text = allowedNetworks
+                .Replace(",", Environment.NewLine)
+                .Replace(";", Environment.NewLine);
+        }
+
         if (values.TryGetValue("ZKTECO_MINIMIZE_TO_TRAY", out var minimizeToTray) &&
             bool.TryParse(minimizeToTray, out var minimizeEnabled))
         {
@@ -184,10 +205,12 @@ public sealed class MainForm : Form
             ["ZKTECO_UPDATE_REPOSITORY"] = _updateRepository.Text.Trim(),
             ["ZKTECO_GITHUB_PROXY"] = _githubProxy.Text.Trim(),
             ["ZKTECO_DATABASE_PATH"] = _databasePath.Text.Trim(),
+            ["ZKTECO_ALLOWED_NETWORKS"] = NormalizeAllowedNetworks(),
             ["ZKTECO_MINIMIZE_TO_TRAY"] = _minimizeToTray.Checked.ToString().ToLowerInvariant()
         });
 
         Environment.SetEnvironmentVariable("ZKTECO_DATABASE_PATH", _databasePath.Text.Trim());
+        Environment.SetEnvironmentVariable("ZKTECO_ALLOWED_NETWORKS", NormalizeAllowedNetworks());
         Environment.SetEnvironmentVariable("ZKTECO_MINIMIZE_TO_TRAY", _minimizeToTray.Checked.ToString().ToLowerInvariant());
 
         AppendLog($"配置已保存，监听地址：{BindUrl}");
@@ -223,7 +246,11 @@ public sealed class MainForm : Form
             SetBusy(true);
             _application = RelayApplication.Build(
                 Array.Empty<string>(),
-                new RelayOverrides(BindUrl, _apiKey.Text.Trim()));
+                new RelayOverrides(
+                    BindUrl,
+                    _apiKey.Text.Trim(),
+                    NormalizeAllowedNetworks(),
+                    message => AppendLog(message)));
 
             await _application.StartAsync();
             _status.Text = $"状态：运行中（{BindUrl}）";
@@ -237,6 +264,7 @@ public sealed class MainForm : Form
             _updateRepository.Enabled = false;
             _githubProxy.Enabled = false;
             _databasePath.Enabled = false;
+            _allowedNetworks.Enabled = false;
             AppendLog("API 已启动。除 /health 外，所有请求必须携带 X-API-Key。" );
         }
         catch (Exception ex)
@@ -289,6 +317,7 @@ public sealed class MainForm : Form
             _updateRepository.Enabled = true;
             _githubProxy.Enabled = true;
             _databasePath.Enabled = true;
+            _allowedNetworks.Enabled = true;
             SetBusy(false);
         }
     }
@@ -383,8 +412,16 @@ public sealed class MainForm : Form
                 return;
             }
 
+            _updateDownloadCts = new CancellationTokenSource();
+            _cancelUpdate.Enabled = true;
+            AppendLog($"开始下载更新包：{update.Package.Name}" );
             var progress = new Progress<int>(percent => _versionStatus.Text = $"正在下载 {update.TagName}：{percent}%");
-            var savedPath = await GitHubUpdateService.DownloadAsync(settings, update, folderDialog.SelectedPath, progress, CancellationToken.None);
+            var savedPath = await GitHubUpdateService.DownloadAsync(
+                settings,
+                update,
+                folderDialog.SelectedPath,
+                progress,
+                _updateDownloadCts.Token);
             _versionStatus.Text = $"更新包已下载：{update.TagName}";
             AppendLog($"更新包已下载并通过校验：{savedPath}" );
 
@@ -407,6 +444,11 @@ public sealed class MainForm : Form
                 Close();
             }
         }
+        catch (OperationCanceledException)
+        {
+            _versionStatus.Text = $"当前版本：{GitHubUpdateService.CurrentVersion}；下载已取消";
+            AppendLog("用户已取消更新下载，临时文件已清理。" );
+        }
         catch (Exception ex)
         {
             AppendLog($"检查或下载更新失败：{ex.Message}" );
@@ -414,6 +456,9 @@ public sealed class MainForm : Form
         }
         finally
         {
+            _cancelUpdate.Enabled = false;
+            _updateDownloadCts?.Dispose();
+            _updateDownloadCts = null;
             SetBusy(false);
         }
     }
@@ -512,8 +557,26 @@ public sealed class MainForm : Form
         Close();
     }
 
+    private string NormalizeAllowedNetworks()
+    {
+        var entries = _allowedNetworks.Text
+            .Split(new[] { ',', ';', '\r', '\n' }, StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries);
+        return string.Join(',', entries);
+    }
+
     private void AppendLog(string message)
     {
+        if (IsDisposed || Disposing)
+        {
+            return;
+        }
+
+        if (InvokeRequired)
+        {
+            BeginInvoke(new Action(() => AppendLog(message)));
+            return;
+        }
+
         _log.AppendText($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
     }
 }

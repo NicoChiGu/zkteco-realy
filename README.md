@@ -123,6 +123,35 @@ https://v4.gh-proxy.org/https://api.github.com/repos/NicoChiGu/zkteco-realy/rele
 
 留空 `ZKTECO_GITHUB_PROXY` 时直接连接 GitHub。管理器会优先下载与当前架构匹配的 `setup.exe`，验证 SHA-256 后启动安装程序，停止内置 API 并退出当前版本。安装程序完成覆盖升级，同时保留已有 `.env` 与 SQLite 数据库。
 
+更新下载开始后，GUI 会启用“取消下载”按钮。取消后会中止 HTTP 请求并删除未完成的 `.download` 临时文件。
+
+## 请求日志与 IP 白名单
+
+GUI 日志区域会显示每个 HTTP/WebSocket 请求的方法、路径、实际来源 IP、响应状态码和耗时。日志不会记录 `X-API-Key`，也不会输出查询字符串中的 WebSocket `apiKey`。
+
+允许访问的 IP 地址或 CIDR 网段可在 GUI 的“允许访问 IP/网段”中配置，多个值支持逗号、分号或换行分隔：
+
+```text
+127.0.0.1/32
+::1/128
+192.168.1.0/24
+10.20.30.45
+```
+
+对应环境变量：
+
+```dotenv
+ZKTECO_ALLOWED_NETWORKS=127.0.0.1/32,::1/128,192.168.1.0/24
+```
+
+允许所有 IPv4 地址：
+
+```dotenv
+ZKTECO_ALLOWED_NETWORKS=0.0.0.0/0
+```
+
+白名单依据 TCP 连接的实际远端地址判断，不信任 `X-Forwarded-For`。未配置时默认只允许 IPv4/IPv6 本机回环地址。白名单与监听地址是两层限制：需要局域网访问时，既要启用“允许内网访问”，也要把对应 IP 或网段加入白名单。
+
 ## 设备配置持久化与自动重连
 
 设备通过 `POST /api/v1/devices/{deviceId}/connect` 连接时，会自动写入 SQLite。默认数据库位置：
@@ -173,6 +202,7 @@ Copy-Item .env.example .env
 ```dotenv
 ZKTECO_API_KEY=replace-with-at-least-32-random-characters
 ZKTECO_BIND_URL=http://127.0.0.1:5080
+ZKTECO_ALLOWED_NETWORKS=127.0.0.1/32,::1/128
 ```
 
 生产环境也可使用机器级环境变量：
