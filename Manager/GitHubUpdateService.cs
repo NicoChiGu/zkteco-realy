@@ -7,7 +7,7 @@ using System.Text.Json.Serialization;
 
 namespace ZktecoRelay.Manager;
 
-internal sealed record UpdateSettings(string Repository, string ProxyPrefix);
+internal sealed record UpdateSettings(string Repository, string DownloadProxyPrefix);
 internal sealed record UpdateAsset(string Name, string DownloadUrl, long Size);
 internal sealed record UpdateInfo(
     Version CurrentVersion,
@@ -46,7 +46,7 @@ internal static class GitHubUpdateService
     {
         ValidateRepository(settings.Repository);
         var apiUrl = $"https://api.github.com/repos/{settings.Repository}/releases/latest";
-        using var response = await HttpClient.GetAsync(ApplyProxy(settings.ProxyPrefix, apiUrl), cancellationToken);
+        using var response = await HttpClient.GetAsync(apiUrl, cancellationToken);
         response.EnsureSuccessStatusCode();
 
         await using var stream = await response.Content.ReadAsStreamAsync(cancellationToken);
@@ -95,7 +95,7 @@ internal static class GitHubUpdateService
         try
         {
             await DownloadFileAsync(
-                ApplyProxy(settings.ProxyPrefix, update.Package.DownloadUrl),
+                ApplyDownloadProxy(settings.DownloadProxyPrefix, update.Package.DownloadUrl),
                 temporaryPath,
                 update.Package.Size,
                 progress,
@@ -104,7 +104,7 @@ internal static class GitHubUpdateService
             if (update.Checksum is not null)
             {
                 var checksumText = await HttpClient.GetStringAsync(
-                    ApplyProxy(settings.ProxyPrefix, update.Checksum.DownloadUrl),
+                    ApplyDownloadProxy(settings.DownloadProxyPrefix, update.Checksum.DownloadUrl),
                     cancellationToken);
                 var expected = checksumText.Split([' ', '\t', '\r', '\n'], StringSplitOptions.RemoveEmptyEntries).FirstOrDefault();
                 if (string.IsNullOrWhiteSpace(expected))
@@ -182,7 +182,7 @@ internal static class GitHubUpdateService
         }
     }
 
-    private static string ApplyProxy(string proxyPrefix, string originalUrl) =>
+    private static string ApplyDownloadProxy(string proxyPrefix, string originalUrl) =>
         string.IsNullOrEmpty(proxyPrefix) ? originalUrl : proxyPrefix + originalUrl;
 
     private static Version ParseVersion(string tagName)

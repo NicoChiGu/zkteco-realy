@@ -18,7 +18,7 @@ public sealed class MainForm : Form
     private readonly Button _openHealth = new() { Text = "打开健康检查", AutoSize = true, Enabled = false };
     private readonly Button _checkSdk = new() { Text = "检查 SDK / DLL", AutoSize = true };
     private readonly TextBox _updateRepository = new() { Width = 300, Text = "NicoChiGu/zkteco-realy" };
-    private readonly TextBox _githubProxy = new() { Width = 430, PlaceholderText = "例如：https://v4.gh-proxy.org/" };
+    private readonly TextBox _githubProxy = new() { Width = 430, PlaceholderText = "仅用于 Release 下载，例如：https://gh-proxy.org/" };
     private readonly Button _checkUpdate = new() { Text = "检查更新", AutoSize = true };
     private readonly Button _cancelUpdate = new() { Text = "取消下载", AutoSize = true, Enabled = false };
     private readonly TextBox _databasePath = new() { Width = 430, PlaceholderText = "留空使用 data\\zkteco-relay.db" };
@@ -89,7 +89,7 @@ public sealed class MainForm : Form
         settings.Controls.Add(_showKey, 1, 3);
         settings.Controls.Add(new Label { Text = "更新仓库", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 4);
         settings.Controls.Add(_updateRepository, 1, 4);
-        settings.Controls.Add(new Label { Text = "GitHub 镜像", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 5);
+        settings.Controls.Add(new Label { Text = "下载镜像", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 5);
         settings.Controls.Add(_githubProxy, 1, 5);
         settings.Controls.Add(new Label { Text = "SQLite 路径", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 6);
         settings.Controls.Add(_databasePath, 1, 6);

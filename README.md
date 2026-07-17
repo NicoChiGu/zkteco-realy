@@ -103,7 +103,7 @@ git push origin v1.2.0
 - 托盘菜单支持启动/停止 API、打开健康检查和退出程序。
 - 设备连接配置写入 SQLite，API 或 Windows 重启后可自动恢复连接。
 - 提供 GitHub Release 更新检查和下载，自动选择与当前进程匹配的 x64/x86 包并校验 SHA-256。
-- 支持配置 GitHub 镜像前缀，例如 `https://v4.gh-proxy.org/`。
+- 支持配置 Release 下载镜像前缀，例如 `https://gh-proxy.org/`；GitHub API 查询始终直连。
 - SDK 健康检查失败时阻止启动 API，避免服务启动后才在设备连接时失败。
 
 配置保存在管理器 EXE 所在目录的 `.env`。请把程序放到当前用户拥有写权限的目录，不要直接放入需要管理员写权限的系统目录。
@@ -112,16 +112,28 @@ git push origin v1.2.0
 
 ```dotenv
 ZKTECO_UPDATE_REPOSITORY=NicoChiGu/zkteco-realy
-ZKTECO_GITHUB_PROXY=https://v4.gh-proxy.org/
+ZKTECO_GITHUB_PROXY=https://gh-proxy.org/
 ```
 
-镜像配置是 URL 前缀。管理器会把官方地址拼接成类似：
+版本检查始终直接访问 GitHub API：
 
 ```text
-https://v4.gh-proxy.org/https://api.github.com/repos/NicoChiGu/zkteco-realy/releases/latest
+https://api.github.com/repos/NicoChiGu/zkteco-realy/releases/latest
 ```
 
-留空 `ZKTECO_GITHUB_PROXY` 时直接连接 GitHub。管理器会优先下载与当前架构匹配的 `setup.exe`，验证 SHA-256 后启动安装程序，停止内置 API 并退出当前版本。安装程序完成覆盖升级，同时保留已有 `.env` 与 SQLite 数据库。
+`ZKTECO_GITHUB_PROXY` 只用于 Release 资产下载。例如 GitHub API 返回：
+
+```text
+https://github.com/NicoChiGu/zkteco-realy/releases/download/v1.0.4/zkteco-relay-win-x64-setup.exe
+```
+
+配置下载镜像后，实际下载地址为：
+
+```text
+https://gh-proxy.org/https://github.com/NicoChiGu/zkteco-realy/releases/download/v1.0.4/zkteco-relay-win-x64-setup.exe
+```
+
+同名 `.sha256` 校验文件也使用下载镜像。留空 `ZKTECO_GITHUB_PROXY` 时直接从 GitHub 下载。管理器会优先下载与当前架构匹配的 `setup.exe`，验证 SHA-256 后启动安装程序，停止内置 API 并退出当前版本。安装程序完成覆盖升级，同时保留已有 `.env` 与 SQLite 数据库。
 
 更新下载开始后，GUI 会启用“取消下载”按钮。取消后会中止 HTTP 请求并删除未完成的 `.download` 临时文件。
 
