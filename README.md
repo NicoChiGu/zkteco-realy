@@ -59,7 +59,7 @@ README.md
 scripts/install-sdk-x64.ps1 与 scripts/install-sdk-x86.ps1
 ```
 
-两个 EXE 都按 self-contained、single-file 方式发布，目标机器不需要预先安装 .NET Runtime。ZKTeco 厂商 DLL 已完整内嵌至安装包（`setup.exe`）与压缩包（`.zip`）中。使用安装包安装时，安装程序会自动根据用户系统架构自动完成 COM DLL (`zkemkeeper.dll`) 的注册。
+两个 EXE 都按 self-contained、single-file 方式发布，目标机器不需要预先安装 .NET Runtime。ZKTeco 厂商 DLL 已完整内嵌至安装包（`setup.exe`）与压缩包（`.zip`）中。使用安装包安装时，安装程序会自动根据用户系统架构自动完成 COM DLL (`zkemkeeper.dll`) 的注册；卸载时会询问是否取消注册 DLL（默认选择不取消注册）。
 
 推送 `v*` 标签时，工作流还会自动创建 GitHub Release，并上传：
 
@@ -237,7 +237,7 @@ ZKTECO_ALLOWED_NETWORKS=127.0.0.1/32,::1/128
 
 EXE 位数必须与已注册的 ZKTeco COM SDK 位数一致。GUI 管理器会从对应位数的 Windows 注册表视图读取 `zkemkeeper` COM 注册信息，并实际创建一次 COM 对象验证安装状态。
 
-- **使用 Installer (`setup.exe`) 安装**：安装程序在安装过程中会自动判断目标系统的 64 位/32 位架构，并自动将内嵌的 `zkemkeeper.dll` 及其依赖注册到 Windows COM 组件中；卸载时也会自动注销。
+- **使用 Installer (`setup.exe`) 安装**：安装程序在安装过程中会自动判断目标系统的 64 位/32 位架构，并自动将内嵌的 `zkemkeeper.dll` 及其依赖注册到 Windows COM 组件中；卸载时会询问用户是否取消注册 COM DLL（默认选择“否”，避免影响同机器上其他软件）。
 - **使用 Portable ZIP 压缩包**：压缩包内已内嵌 `dll/x64` 与 `dll/x86` 目录。解压后可按需运行注册脚本：
 
 ### x64 手动注册脚本
