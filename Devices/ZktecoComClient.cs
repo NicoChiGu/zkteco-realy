@@ -1,3 +1,4 @@
+using System.Globalization;
 using ZktecoRelay.Models;
 using ZktecoRelay.Realtime;
 
@@ -49,7 +50,9 @@ internal sealed partial class ZktecoComClient : IDisposable
         return errorCode;
     }
 
-    public IReadOnlyList<AttendanceRecord> ReadAttendance()
+    public IReadOnlyList<AttendanceRecord> ReadAttendance(
+        DateTimeOffset? from = null,
+        DateTimeOffset? to = null)
     {
         ThrowIfDisposed();
         var records = new List<AttendanceRecord>();
@@ -58,9 +61,36 @@ internal sealed partial class ZktecoComClient : IDisposable
         try
         {
             deviceDisabled = _sdk.EnableDevice(MachineNumber, false);
-            if (!_sdk.ReadAllGLogData(MachineNumber))
+            var readSucceeded = false;
+            if (from.HasValue && to.HasValue)
             {
-                throw new InvalidOperationException($"ReadAllGLogData failed. Vendor error: {GetLastError()}.");
+                try
+                {
+                    readSucceeded = _sdk.ReadTimeGLogData(
+                        MachineNumber,
+                        FormatDeviceTime(from.Value),
+                        FormatDeviceTime(to.Value));
+                }
+                catch
+                {
+                    // Older SDK registrations may not expose this method.
+                }
+            }
+            else
+            {
+                readSucceeded = _sdk.ReadAllGLogData(MachineNumber);
+            }
+
+            if (!readSucceeded && from.HasValue && to.HasValue)
+            {
+                // ReadTimeGLogData is limited to newer firmware. Fall back to
+                // reading the full buffer and filter locally for older devices.
+                readSucceeded = _sdk.ReadAllGLogData(MachineNumber);
+            }
+
+            if (!readSucceeded)
+            {
+                throw new InvalidOperationException($"Reading attendance data failed. Vendor error: {GetLastError()}.");
             }
 
             while (true)
@@ -96,10 +126,74 @@ internal sealed partial class ZktecoComClient : IDisposable
 
                 var localTime = new DateTime(year, month, day, hour, minute, second, DateTimeKind.Unspecified);
                 var timestamp = new DateTimeOffset(localTime, TimeZoneInfo.Local.GetUtcOffset(localTime));
+                if (from.HasValue && timestamp < from.Value ||
+                    to.HasValue && timestamp > to.Value)
+                {
+                    continue;
+                }
+
                 records.Add(new AttendanceRecord(enrollNumber, verifyMode, inOutMode, timestamp, workCode));
             }
 
             return records;
+        }
+        finally
+        {
+            if (deviceDisabled)
+            {
+                _sdk.EnableDevice(MachineNumber, true);
+            }
+        }
+    }
+
+    public OperationResult ClearAttendance(AttendanceClearRequest request)
+    {
+        ThrowIfDisposed();
+        var deviceDisabled = false;
+
+        try
+        {
+            deviceDisabled = _sdk.EnableDevice(MachineNumber, false);
+
+            var operation = request.Before.HasValue
+                ? "DeleteAttlogByTime"
+                : request.From.HasValue
+                    ? "DeleteAttlogBetweenTheDate"
+                    : "ClearGLog";
+
+            bool succeeded;
+            try
+            {
+                if (request.Before.HasValue)
+                {
+                    succeeded = _sdk.DeleteAttlogByTime(
+                        MachineNumber,
+                        FormatDeviceTime(request.Before.Value));
+                }
+                else if (request.From.HasValue && request.To.HasValue)
+                {
+                    succeeded = _sdk.DeleteAttlogBetweenTheDate(
+                        MachineNumber,
+                        FormatDeviceTime(request.From.Value),
+                        FormatDeviceTime(request.To.Value));
+                }
+                else
+                {
+                    succeeded = _sdk.ClearGLog(MachineNumber);
+                }
+            }
+            catch (Exception ex)
+            {
+                return new OperationResult(false, null, $"{operation} is unavailable: {ex.Message}");
+            }
+
+            if (!succeeded)
+            {
+                return Failure(operation);
+            }
+
+            _sdk.RefreshData(MachineNumber);
+            return new OperationResult(true);
         }
         finally
         {
@@ -153,4 +247,7 @@ internal sealed partial class ZktecoComClient : IDisposable
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
     }
+
+    private static string FormatDeviceTime(DateTimeOffset value) =>
+        value.ToLocalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture);
 }

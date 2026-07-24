@@ -1,31 +1,81 @@
 openapi: 3.0.3
 info:
   title: ZKTeco Relay API
-  version: 1.0.0
-  description: Windows ZKTeco offline communication relay REST API.
+  version: 1.1.0
+  description: |
+    Windows ZKTeco 脱机通讯 REST/WebSocket 中继服务。
+    除健康检查和文档端点外，所有请求均需提供 X-API-Key。
 servers:
   - url: http://127.0.0.1:5080
+    description: 默认本机服务
+tags:
+  - name: Service
+    description: 健康检查与 API 文档
+  - name: Devices
+    description: 设备会话、连接和控制
+  - name: Attendance
+    description: 考勤读取、查询和清理
+  - name: Configurations
+    description: 设备连接配置持久化
+  - name: Users
+    description: 人员、卡号和密码
+  - name: Biometrics
+    description: 指纹、人脸模板和照片
+  - name: Access
+    description: 门禁控制与权限
+  - name: Events
+    description: 实时事件 WebSocket
 security:
   - ApiKeyAuth: []
 paths:
   /health:
     get:
-      summary: Health check
+      tags: [Service]
+      operationId: healthCheck
+      summary: HTTP 健康检查
       security: []
       responses:
         '200':
-          description: Service is healthy
+          description: 服务正在运行
           content:
             text/plain:
               schema:
                 type: string
               example: Healthy
-  /api/v1/devices:
+  /docs:
     get:
-      summary: List device sessions
+      tags: [Service]
+      operationId: openSwaggerUi
+      summary: Swagger UI
+      security: []
       responses:
         '200':
-          description: Device status list
+          description: Swagger UI HTML
+          content:
+            text/html:
+              schema:
+                type: string
+  /openapi.yaml:
+    get:
+      tags: [Service]
+      operationId: downloadOpenApi
+      summary: 下载 OpenAPI 3.0 定义
+      security: []
+      responses:
+        '200':
+          description: OpenAPI YAML
+          content:
+            application/yaml:
+              schema:
+                type: string
+  /api/v1/devices:
+    get:
+      tags: [Devices]
+      operationId: listDevices
+      summary: 获取设备会话列表
+      responses:
+        '200':
+          description: 设备状态列表
           content:
             application/json:
               schema:
@@ -38,10 +88,12 @@ paths:
     parameters:
       - $ref: '#/components/parameters/DeviceId'
     get:
-      summary: Get device status
+      tags: [Devices]
+      operationId: getDevice
+      summary: 获取单个设备状态
       responses:
         '200':
-          description: Device status
+          description: 设备状态
           content:
             application/json:
               schema:
@@ -54,7 +106,10 @@ paths:
     parameters:
       - $ref: '#/components/parameters/DeviceId'
     post:
-      summary: Connect to a ZKTeco device
+      tags: [Devices]
+      operationId: connectDevice
+      summary: 连接设备
+      description: 连接成功或失败都会保存连接配置；成功后启用自动连接。
       requestBody:
         required: true
         content:
@@ -67,18 +122,13 @@ paths:
               communicationPassword: ''
       responses:
         '200':
-          description: Connected successfully
+          description: 连接成功
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/DeviceConnectionResult'
-              example:
-                deviceId: office-gate-01
-                connected: true
-                error: null
-                vendorErrorCode: null
         '400':
-          description: Invalid request or device connection failed
+          description: 请求无效或厂商 SDK 连接失败
           content:
             application/json:
               schema:
@@ -91,106 +141,779 @@ paths:
     parameters:
       - $ref: '#/components/parameters/DeviceId'
     post:
-      summary: Disconnect and remove a device session
+      tags: [Devices]
+      operationId: disconnectDevice
+      summary: 断开设备并关闭自动连接
       responses:
         '200':
-          description: Disconnected
+          description: 已断开
           content:
             application/json:
               schema:
-                type: object
-                required: [deviceId, connected]
-                properties:
-                  deviceId:
-                    type: string
-                  connected:
-                    type: boolean
-                    enum: [false]
-              example:
-                deviceId: office-gate-01
-                connected: false
+                $ref: '#/components/schemas/DisconnectResult'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/DeviceNotFound'
+  /api/v1/devices/{deviceId}/restart:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      tags: [Devices]
+      operationId: restartDevice
+      summary: 重启设备
+      responses:
+        '202':
+          description: 重启命令已发送
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RestartResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceUnavailable'
   /api/v1/devices/{deviceId}/attendance:
     parameters:
       - $ref: '#/components/parameters/DeviceId'
     get:
-      summary: Read all general attendance records from a connected device
+      tags: [Attendance]
+      operationId: readAllAttendance
+      summary: 拉取全部普通考勤记录
+      description: 兼容端点，响应体保持为数组。
       responses:
         '200':
-          description: Attendance records
+          description: 考勤记录
           content:
             application/json:
               schema:
                 type: array
                 items:
                   $ref: '#/components/schemas/AttendanceRecord'
-              example:
-                - enrollNumber: '10001'
-                  verifyMode: 1
-                  inOutMode: 0
-                  timestamp: '2026-07-16T08:31:12+08:00'
-                  workCode: 0
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/DeviceNotFound'
         '409':
           $ref: '#/components/responses/DeviceUnavailable'
-  /api/v1/devices/{deviceId}/restart:
+  /api/v1/devices/{deviceId}/attendance/query:
     parameters:
       - $ref: '#/components/parameters/DeviceId'
-    post:
-      summary: Restart a connected device
+      - name: from
+        in: query
+        description: 包含该时刻，可单独使用。
+        schema:
+          type: string
+          format: date-time
+      - name: to
+        in: query
+        description: 包含该时刻，可单独使用。
+        schema:
+          type: string
+          format: date-time
+      - name: page
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          default: 1
+      - name: pageSize
+        in: query
+        schema:
+          type: integer
+          minimum: 1
+          maximum: 1000
+          default: 100
+    get:
+      tags: [Attendance]
+      operationId: queryAttendance
+      summary: 按时间范围查询并分页
+      description: |
+        同时提供 from 和 to 时优先使用 ReadTimeGLogData；旧固件不支持时，
+        回退到 ReadAllGLogData 后本地过滤。分页发生在设备读取完成之后。
       responses:
-        '202':
-          description: Restart command accepted
+        '200':
+          description: 分页结果
           content:
             application/json:
               schema:
-                type: object
-                required: [deviceId, restarted]
-                properties:
-                  deviceId:
-                    type: string
-                  restarted:
-                    type: boolean
-              example:
-                deviceId: office-gate-01
-                restarted: true
+                $ref: '#/components/schemas/AttendancePage'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
         '401':
           $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/DeviceNotFound'
         '409':
           $ref: '#/components/responses/DeviceUnavailable'
+  /api/v1/devices/{deviceId}/attendance/clear:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      tags: [Attendance]
+      operationId: clearAttendance
+      summary: 清除考勤记录
+      description: |
+        不传时间为全量清除；from 与 to 同时存在时清除该范围；
+        before 存在时清除该时刻之前的记录。confirm 必须为 true。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AttendanceClearRequest'
+            examples:
+              all:
+                summary: 清除全部
+                value:
+                  confirm: true
+              range:
+                summary: 清除时间范围
+                value:
+                  confirm: true
+                  from: '2026-07-01T00:00:00+08:00'
+                  to: '2026-07-31T23:59:59+08:00'
+              before:
+                summary: 清除指定时刻之前
+                value:
+                  confirm: true
+                  before: '2026-07-01T00:00:00+08:00'
+      responses:
+        '200':
+          description: 清理成功
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/OperationResult'
+        '400':
+          $ref: '#/components/responses/InvalidOrVendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceUnavailable'
+  /api/v1/device-configurations:
+    get:
+      tags: [Configurations]
+      operationId: listDeviceConfigurations
+      summary: 获取全部持久化设备配置
+      responses:
+        '200':
+          description: 配置列表，不包含通信密码明文
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/DeviceConfiguration'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v1/device-configurations/{deviceId}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      tags: [Configurations]
+      operationId: getDeviceConfiguration
+      summary: 获取单个持久化设备配置
+      responses:
+        '200':
+          description: 设备配置
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceConfiguration'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ConfigurationNotFound'
+    put:
+      tags: [Configurations]
+      operationId: upsertDeviceConfiguration
+      summary: 新建或更新持久化设备配置
+      description: communicationPassword 为 null 时保留已有密码。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateDeviceConfigurationRequest'
+      responses:
+        '200':
+          description: 更新后的配置
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DeviceConfiguration'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+    delete:
+      tags: [Configurations]
+      operationId: deleteDeviceConfiguration
+      summary: 删除持久化设备配置
+      responses:
+        '204':
+          description: 已删除
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/ConfigurationNotFound'
+  /api/v1/devices/{deviceId}/users:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    get:
+      tags: [Users]
+      operationId: listUsers
+      summary: 获取人员列表
+      responses:
+        '200':
+          description: 人员列表
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/UserInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+  /api/v1/devices/{deviceId}/users/{enrollNumber}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/EnrollNumber'
+    get:
+      tags: [Users]
+      operationId: getUser
+      summary: 获取人员
+      responses:
+        '200':
+          description: 人员信息
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+    put:
+      tags: [Users]
+      operationId: upsertUser
+      summary: 新建或更新人员、卡号和密码
+      description: password 或 cardNumber 为 null 时保留设备中的已有值。
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpsertUserRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/OperationSucceeded'
+        '400':
+          $ref: '#/components/responses/InvalidOrVendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+    delete:
+      tags: [Users]
+      operationId: deleteUser
+      summary: 删除人员及登记数据
+      responses:
+        '200':
+          $ref: '#/components/responses/OperationSucceeded'
+        '400':
+          $ref: '#/components/responses/VendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+  /api/v1/devices/{deviceId}/users/{enrollNumber}/fingerprints/{fingerIndex}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/EnrollNumber'
+      - $ref: '#/components/parameters/FingerIndex'
+    get:
+      tags: [Biometrics]
+      operationId: getFingerprint
+      summary: 获取指纹模板
+      responses:
+        '200':
+          description: 指纹模板
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FingerprintTemplateResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+    put:
+      tags: [Biometrics]
+      operationId: setFingerprint
+      summary: 写入指纹模板
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FingerprintTemplateRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/OperationSucceeded'
+        '400':
+          $ref: '#/components/responses/InvalidOrVendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+    delete:
+      tags: [Biometrics]
+      operationId: deleteFingerprint
+      summary: 删除指纹模板
+      responses:
+        '200':
+          $ref: '#/components/responses/OperationSucceeded'
+        '400':
+          $ref: '#/components/responses/VendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+  /api/v1/devices/{deviceId}/users/{enrollNumber}/face:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/EnrollNumber'
+    get:
+      tags: [Biometrics]
+      operationId: getFace
+      summary: 获取人脸模板
+      parameters:
+        - $ref: '#/components/parameters/FaceIndex'
+      responses:
+        '200':
+          description: 人脸模板
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/FaceTemplateResult'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+    put:
+      tags: [Biometrics]
+      operationId: setFace
+      summary: 写入人脸模板
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/FaceTemplateRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/OperationSucceeded'
+        '400':
+          $ref: '#/components/responses/InvalidOrVendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+    delete:
+      tags: [Biometrics]
+      operationId: deleteFace
+      summary: 删除人脸模板
+      parameters:
+        - $ref: '#/components/parameters/FaceIndex'
+      responses:
+        '200':
+          $ref: '#/components/responses/OperationSucceeded'
+        '400':
+          $ref: '#/components/responses/VendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+  /api/v1/devices/{deviceId}/users/{enrollNumber}/photo:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/EnrollNumber'
+    put:
+      tags: [Biometrics]
+      operationId: uploadUserPhoto
+      summary: 上传人员照片或可见光人脸照片
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserPhotoRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/OperationSucceeded'
+        '400':
+          $ref: '#/components/responses/InvalidOrVendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+  /api/v1/devices/{deviceId}/access/unlock:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+    post:
+      tags: [Access]
+      operationId: unlockDoor
+      summary: 远程开门
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DoorUnlockRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/OperationSucceeded'
+        '400':
+          $ref: '#/components/responses/InvalidOrVendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+  /api/v1/devices/{deviceId}/access/time-zones/{index}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/TimeZoneIndex'
+    get:
+      tags: [Access]
+      operationId: getAccessTimeZone
+      summary: 获取门禁时间段
+      responses:
+        '200':
+          description: 时间段
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TimeZoneInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+    put:
+      tags: [Access]
+      operationId: setAccessTimeZone
+      summary: 设置门禁时间段
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/TimeZoneRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/OperationSucceeded'
+        '400':
+          $ref: '#/components/responses/InvalidOrVendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+  /api/v1/devices/{deviceId}/access/groups/{groupNumber}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/GroupNumber'
+    get:
+      tags: [Access]
+      operationId: getAccessGroup
+      summary: 获取门禁权限组
+      responses:
+        '200':
+          description: 权限组
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AccessGroupInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+    put:
+      tags: [Access]
+      operationId: setAccessGroup
+      summary: 设置门禁权限组
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AccessGroupRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/OperationSucceeded'
+        '400':
+          $ref: '#/components/responses/InvalidOrVendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+  /api/v1/devices/{deviceId}/access/users/{enrollNumber}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/EnrollNumber'
+    get:
+      tags: [Access]
+      operationId: getUserAccess
+      summary: 获取人员门禁权限
+      responses:
+        '200':
+          description: 人员门禁权限
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserAccessInfo'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+    put:
+      tags: [Access]
+      operationId: setUserAccess
+      summary: 设置人员门禁权限
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UserAccessRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/OperationSucceeded'
+        '400':
+          $ref: '#/components/responses/InvalidOrVendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+  /api/v1/devices/{deviceId}/access/unlock-combinations/{number}:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/CombinationNumber'
+    get:
+      tags: [Access]
+      operationId: getUnlockCombination
+      summary: 获取多人开锁组合
+      responses:
+        '200':
+          description: 多人开锁组合
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UnlockCombinationInfo'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+    put:
+      tags: [Access]
+      operationId: setUnlockCombination
+      summary: 设置多人开锁组合
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UnlockCombinationRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/OperationSucceeded'
+        '400':
+          $ref: '#/components/responses/InvalidOrVendorFailure'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/DeviceNotFound'
+        '409':
+          $ref: '#/components/responses/DeviceOperationFailed'
+  /api/v1/events/ws:
+    get:
+      tags: [Events]
+      operationId: subscribeRealtimeEvents
+      summary: 订阅实时事件 WebSocket
+      description: |
+        使用 WebSocket 升级连接。服务端客户端应使用 X-API-Key；
+        浏览器可使用 apiKey 查询参数。可按 deviceId 和 eventType 过滤。
+      x-websocket: true
+      x-websocket-message-schema:
+        $ref: '#/components/schemas/RealtimeEvent'
+      security:
+        - ApiKeyAuth: []
+        - ApiKeyQuery: []
+      parameters:
+        - name: apiKey
+          in: query
+          description: 浏览器 WebSocket 无法设置自定义请求头时使用。
+          schema:
+            type: string
+        - name: deviceId
+          in: query
+          schema:
+            type: string
+        - name: eventType
+          in: query
+          description: 逗号分隔的事件类型。
+          schema:
+            type: string
+          example: attendance,door,alarm
+      responses:
+        '101':
+          description: WebSocket 协议升级成功，消息模型为 RealtimeEvent。
+        '400':
+          description: 请求不是 WebSocket 升级请求
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
 components:
   securitySchemes:
     ApiKeyAuth:
       type: apiKey
       in: header
       name: X-API-Key
+    ApiKeyQuery:
+      type: apiKey
+      in: query
+      name: apiKey
   parameters:
     DeviceId:
       name: deviceId
       in: path
       required: true
-      description: Caller-defined stable identifier for one physical device.
+      description: 调用方定义的稳定设备标识，最长 64 个字符。
       schema:
         type: string
         maxLength: 64
       example: office-gate-01
+    EnrollNumber:
+      name: enrollNumber
+      in: path
+      required: true
+      description: 设备中的人员工号。
+      schema:
+        type: string
+      example: '10001'
+    FingerIndex:
+      name: fingerIndex
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 0
+        maximum: 9
+    FaceIndex:
+      name: faceIndex
+      in: query
+      required: false
+      schema:
+        type: integer
+        default: 50
+    TimeZoneIndex:
+      name: index
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    GroupNumber:
+      name: groupNumber
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
+    CombinationNumber:
+      name: number
+      in: path
+      required: true
+      schema:
+        type: integer
+        minimum: 1
   responses:
     Unauthorized:
-      description: Missing or invalid API key
+      description: 缺少或提供了错误的 API Key
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiError'
+    InvalidRequest:
+      description: 请求参数无效
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    InvalidOrVendorFailure:
+      description: 请求参数无效或厂商 SDK 拒绝操作
+      content:
+        application/json:
+          schema:
+            oneOf:
+              - $ref: '#/components/schemas/ApiError'
+              - $ref: '#/components/schemas/OperationResult'
+    VendorFailure:
+      description: 厂商 SDK 拒绝操作
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OperationResult'
     DeviceNotFound:
-      description: Device session was not found
+      description: 设备会话不存在
       content:
         application/json:
           schema:
@@ -198,15 +921,31 @@ components:
           example:
             code: device_not_found
             message: Device was not found.
-    DeviceUnavailable:
-      description: Device session exists but is not connected
+            vendorErrorCode: null
+    ConfigurationNotFound:
+      description: 持久化配置不存在
       content:
         application/json:
           schema:
             $ref: '#/components/schemas/ApiError'
-          example:
-            code: device_unavailable
-            message: Device 'office-gate-01' is not connected.
+    DeviceUnavailable:
+      description: 设备会话存在但尚未连接
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    DeviceOperationFailed:
+      description: 设备未连接或设备读取失败
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ApiError'
+    OperationSucceeded:
+      description: 设备操作成功
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/OperationResult'
   schemas:
     ApiError:
       type: object
@@ -216,13 +955,28 @@ components:
           type: string
         message:
           type: string
+        vendorErrorCode:
+          type: integer
+          nullable: true
+    OperationResult:
+      type: object
+      required: [success]
+      properties:
+        success:
+          type: boolean
+        vendorErrorCode:
+          type: integer
+          nullable: true
+        message:
+          type: string
+          nullable: true
     ConnectDeviceRequest:
       type: object
       required: [ipAddress]
       properties:
         ipAddress:
           type: string
-          description: IPv4 or IPv6 address of the device.
+          description: 设备 IPv4 或 IPv6 地址。
         port:
           type: integer
           minimum: 1
@@ -231,7 +985,15 @@ components:
         communicationPassword:
           type: string
           nullable: true
-          description: Device communication password, not the relay API key.
+          description: 设备通信密码，不是 Relay API Key。
+    UpdateDeviceConfigurationRequest:
+      allOf:
+        - $ref: '#/components/schemas/ConnectDeviceRequest'
+        - type: object
+          properties:
+            autoConnect:
+              type: boolean
+              default: true
     DeviceConnectionResult:
       type: object
       required: [deviceId, connected]
@@ -265,6 +1027,46 @@ components:
         lastError:
           type: string
           nullable: true
+    DeviceConfiguration:
+      type: object
+      required:
+        - deviceId
+        - ipAddress
+        - port
+        - hasCommunicationPassword
+        - autoConnect
+        - updatedAt
+      properties:
+        deviceId:
+          type: string
+        ipAddress:
+          type: string
+        port:
+          type: integer
+        hasCommunicationPassword:
+          type: boolean
+        autoConnect:
+          type: boolean
+        updatedAt:
+          type: string
+          format: date-time
+    DisconnectResult:
+      type: object
+      required: [deviceId, connected]
+      properties:
+        deviceId:
+          type: string
+        connected:
+          type: boolean
+          enum: [false]
+    RestartResult:
+      type: object
+      required: [deviceId, restarted]
+      properties:
+        deviceId:
+          type: string
+        restarted:
+          type: boolean
     AttendanceRecord:
       type: object
       required: [enrollNumber, verifyMode, inOutMode, timestamp, workCode]
@@ -273,12 +1075,267 @@ components:
           type: string
         verifyMode:
           type: integer
-          description: Raw verification mode code from the vendor SDK.
+          description: 厂商 SDK 原始验证方式。
         inOutMode:
           type: integer
-          description: Raw attendance/in-out state code from the vendor SDK.
+          description: 厂商 SDK 原始考勤状态。
         timestamp:
           type: string
           format: date-time
         workCode:
           type: integer
+    AttendancePage:
+      type: object
+      required: [items, page, pageSize, totalItems, totalPages]
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AttendanceRecord'
+        page:
+          type: integer
+        pageSize:
+          type: integer
+        totalItems:
+          type: integer
+        totalPages:
+          type: integer
+        from:
+          type: string
+          format: date-time
+          nullable: true
+        to:
+          type: string
+          format: date-time
+          nullable: true
+    AttendanceClearRequest:
+      type: object
+      required: [confirm]
+      properties:
+        confirm:
+          type: boolean
+          enum: [true]
+        from:
+          type: string
+          format: date-time
+          nullable: true
+        to:
+          type: string
+          format: date-time
+          nullable: true
+        before:
+          type: string
+          format: date-time
+          nullable: true
+      description: |
+        before 不能与 from/to 混用；from 和 to 必须同时存在。
+        三个时间均为空时表示清除全部。
+    UserInfo:
+      type: object
+      required: [enrollNumber, name, privilege, enabled, cardNumber, hasPassword]
+      properties:
+        enrollNumber:
+          type: string
+        name:
+          type: string
+        privilege:
+          type: integer
+        enabled:
+          type: boolean
+        cardNumber:
+          type: string
+        hasPassword:
+          type: boolean
+    UpsertUserRequest:
+      type: object
+      required: [name]
+      properties:
+        name:
+          type: string
+        password:
+          type: string
+          nullable: true
+        privilege:
+          type: integer
+          default: 0
+        enabled:
+          type: boolean
+          default: true
+        cardNumber:
+          type: string
+          nullable: true
+    FingerprintTemplateRequest:
+      type: object
+      required: [templateData]
+      properties:
+        fingerIndex:
+          type: integer
+          description: 路径参数会覆盖该值。
+        templateData:
+          type: string
+    FingerprintTemplateResult:
+      type: object
+      required: [enrollNumber, fingerIndex, templateData, templateLength]
+      properties:
+        enrollNumber:
+          type: string
+        fingerIndex:
+          type: integer
+        templateData:
+          type: string
+        templateLength:
+          type: integer
+    FaceTemplateRequest:
+      type: object
+      required: [templateData]
+      properties:
+        templateData:
+          type: string
+        faceIndex:
+          type: integer
+          default: 50
+    FaceTemplateResult:
+      type: object
+      required: [enrollNumber, faceIndex, templateData, templateLength]
+      properties:
+        enrollNumber:
+          type: string
+        faceIndex:
+          type: integer
+        templateData:
+          type: string
+        templateLength:
+          type: integer
+    UserPhotoRequest:
+      type: object
+      required: [base64Jpeg]
+      properties:
+        base64Jpeg:
+          type: string
+          format: byte
+        visibleLightFacePhoto:
+          type: boolean
+          default: false
+    DoorUnlockRequest:
+      type: object
+      properties:
+        delayTenthsOfSecond:
+          type: integer
+          default: 30
+          description: 开门延时，单位为 0.1 秒。
+    TimeZoneRequest:
+      type: object
+      required: [schedule]
+      properties:
+        timeZoneIndex:
+          type: integer
+          description: 路径参数会覆盖该值。
+        schedule:
+          type: string
+          minLength: 56
+          maxLength: 56
+          pattern: '^[0-9]{56}$'
+    TimeZoneInfo:
+      type: object
+      required: [timeZoneIndex, schedule]
+      properties:
+        timeZoneIndex:
+          type: integer
+        schedule:
+          type: string
+    AccessGroupRequest:
+      type: object
+      required: [timeZone1, timeZone2, timeZone3]
+      properties:
+        groupNumber:
+          type: integer
+          description: 路径参数会覆盖该值。
+        timeZone1:
+          type: integer
+        timeZone2:
+          type: integer
+        timeZone3:
+          type: integer
+        holidayValid:
+          type: boolean
+          default: false
+        verifyStyle:
+          type: integer
+          default: 0
+    AccessGroupInfo:
+      allOf:
+        - $ref: '#/components/schemas/AccessGroupRequest'
+        - type: object
+          required: [groupNumber]
+    UserAccessRequest:
+      type: object
+      required: [groupNumber]
+      properties:
+        groupNumber:
+          type: integer
+        timeZone1:
+          type: integer
+          default: 0
+        timeZone2:
+          type: integer
+          default: 0
+        timeZone3:
+          type: integer
+          default: 0
+        useGroupTimeZone:
+          type: boolean
+          default: true
+    UserAccessInfo:
+      type: object
+      required: [enrollNumber, groupNumber, timeZones, usesGroupTimeZone]
+      properties:
+        enrollNumber:
+          type: string
+        groupNumber:
+          type: integer
+        timeZones:
+          type: string
+        usesGroupTimeZone:
+          type: boolean
+    UnlockCombinationRequest:
+      type: object
+      required: [group1]
+      properties:
+        combinationNumber:
+          type: integer
+          description: 路径参数会覆盖该值。
+        group1:
+          type: integer
+        group2:
+          type: integer
+          default: 0
+        group3:
+          type: integer
+          default: 0
+        group4:
+          type: integer
+          default: 0
+        group5:
+          type: integer
+          default: 0
+    UnlockCombinationInfo:
+      allOf:
+        - $ref: '#/components/schemas/UnlockCombinationRequest'
+        - type: object
+          required: [combinationNumber]
+    RealtimeEvent:
+      type: object
+      required: [eventId, deviceId, eventType, occurredAt, data]
+      properties:
+        eventId:
+          type: string
+        deviceId:
+          type: string
+        eventType:
+          type: string
+        occurredAt:
+          type: string
+          format: date-time
+        data:
+          type: object
+          additionalProperties: true

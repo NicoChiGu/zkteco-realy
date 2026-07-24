@@ -34,6 +34,21 @@ public sealed record AttendanceRecord(
     DateTimeOffset Timestamp,
     int WorkCode);
 
+public sealed record AttendancePage(
+    IReadOnlyList<AttendanceRecord> Items,
+    int Page,
+    int PageSize,
+    int TotalItems,
+    int TotalPages,
+    DateTimeOffset? From,
+    DateTimeOffset? To);
+
+public sealed record AttendanceClearRequest(
+    bool Confirm = false,
+    DateTimeOffset? From = null,
+    DateTimeOffset? To = null,
+    DateTimeOffset? Before = null);
+
 public sealed record UserInfo(
     string EnrollNumber,
     string Name,

@@ -64,36 +64,39 @@ public static partial class RelayApplication
                     return;
                 }
 
-                if (context.Request.Path.StartsWithSegments("/health"))
+                if (context.Request.Path.StartsWithSegments("/health") ||
+                    context.Request.Path.StartsWithSegments("/docs") ||
+                    context.Request.Path.StartsWithSegments("/openapi.yaml"))
                 {
                     await next();
                     return;
                 }
 
-            var suppliedApiKey = context.Request.Headers.TryGetValue("X-API-Key", out var suppliedValues)
-                ? suppliedValues.ToString()
-                : context.Request.Path.StartsWithSegments("/api/v1/events/ws")
-                    ? context.Request.Query["apiKey"].ToString()
-                    : string.Empty;
+                var suppliedApiKey = context.Request.Headers.TryGetValue("X-API-Key", out var suppliedValues)
+                    ? suppliedValues.ToString()
+                    : context.Request.Path.StartsWithSegments("/api/v1/events/ws")
+                        ? context.Request.Query["apiKey"].ToString()
+                        : string.Empty;
 
-            if (string.IsNullOrEmpty(suppliedApiKey))
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                await context.Response.WriteAsJsonAsync(new ApiError("missing_api_key", "X-API-Key header is required."));
-                return;
-            }
-            var expectedBytes = Encoding.UTF8.GetBytes(configuredApiKey);
-            var suppliedBytes = Encoding.UTF8.GetBytes(suppliedApiKey);
+                if (string.IsNullOrEmpty(suppliedApiKey))
+                {
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    await context.Response.WriteAsJsonAsync(new ApiError("missing_api_key", "X-API-Key header is required."));
+                    return;
+                }
 
-            var valid = expectedBytes.Length == suppliedBytes.Length &&
-                        CryptographicOperations.FixedTimeEquals(expectedBytes, suppliedBytes);
+                var expectedBytes = Encoding.UTF8.GetBytes(configuredApiKey);
+                var suppliedBytes = Encoding.UTF8.GetBytes(suppliedApiKey);
 
-            if (!valid)
-            {
-                context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-                await context.Response.WriteAsJsonAsync(new ApiError("invalid_api_key", "The supplied API key is invalid."));
-                return;
-            }
+                var valid = expectedBytes.Length == suppliedBytes.Length &&
+                            CryptographicOperations.FixedTimeEquals(expectedBytes, suppliedBytes);
+
+                if (!valid)
+                {
+                    context.Response.StatusCode = StatusCodes.Status401Unauthorized;
+                    await context.Response.WriteAsJsonAsync(new ApiError("invalid_api_key", "The supplied API key is invalid."));
+                    return;
+                }
 
                 await next();
             }
@@ -117,7 +120,9 @@ public static partial class RelayApplication
         });
 
         app.MapHealthChecks("/health");
+        MapDocumentationEndpoints(app);
         MapDeviceEndpoints(app);
+        MapAttendanceEndpoints(app);
         MapDeviceConfigurationEndpoints(app);
         MapExtendedEndpoints(app);
         MapRealtimeEndpoints(app);

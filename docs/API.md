@@ -4,6 +4,12 @@
 
 > 当前 API 设计为服务器到服务器调用。服务未启用 CORS，不建议浏览器前端直接访问。Web 前端应调用自己的业务后端，再由业务后端调用 Relay。
 
+完整端点清单见 [`API_REFERENCE.md`](API_REFERENCE.md)，考勤分页与清理见
+[`ATTENDANCE_API.md`](ATTENDANCE_API.md)，人员/生物特征/门禁见
+[`EXTENDED_API.md`](EXTENDED_API.md)，实时事件见
+[`REALTIME_EVENTS.md`](REALTIME_EVENTS.md)。运行服务后可访问 `/docs/` 使用
+Swagger UI，或访问 `/openapi.yaml` 下载完整 OpenAPI 3.0 定义。
+
 ## 1. 基本信息
 
 默认服务地址：
@@ -819,17 +825,17 @@ print(records.json())
 - 不要记录设备通信密码。
 - 定期轮换 `ZKTECO_API_KEY`。
 
-## 17. 当前未实现能力
+## 17. 扩展能力
 
-当前版本尚未提供：
+当前版本还提供：
 
-- 分页和按时间范围查询考勤。
-- 清除设备考勤记录。
+- 考勤按时间范围查询和分页。
+- 全量、按时间范围或指定时刻之前清除设备考勤。
 - 实时事件 WebSocket。
-- 用户增删改查。
-- 卡号、密码、指纹模板管理。
-- 人脸照片管理。
-- 门禁开门控制。
-- OpenAPI UI 页面。
+- 用户增删改查，以及卡号、密码、指纹模板和人脸模板管理。
+- 人员照片与可见光人脸照片上传。
+- 远程开门、时间段、权限组、人员权限和多人开锁组合。
+- 设备配置 SQLite 持久化与自动连接。
+- Swagger UI 和完整 OpenAPI 3.0 定义。
 
-仓库中提供了静态 `docs/openapi.yaml`，可导入 Swagger Editor、Postman、Insomnia 或代码生成工具。
+对应路径和文档入口统一列在 [`API_REFERENCE.md`](API_REFERENCE.md)。

@@ -12,6 +12,9 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="8.0.14" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="docs\openapi.yaml" LogicalName="ZktecoRelay.OpenApi.yaml" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Remove="Manager\**\*.cs" />
     <EmbeddedResource Remove="Manager\**\*" />
     <None Remove="Manager\**\*" />

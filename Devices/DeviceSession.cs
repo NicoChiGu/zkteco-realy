@@ -83,6 +83,17 @@ internal sealed class DeviceSession : IDisposable
             return _client!.ReadAttendance();
         }, cancellationToken);
 
+    public Task<IReadOnlyList<AttendanceRecord>> ReadAttendanceAsync(
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        CancellationToken cancellationToken) =>
+        InvokeClientAsync(client => client.ReadAttendance(from, to), cancellationToken);
+
+    public Task<OperationResult> ClearAttendanceAsync(
+        AttendanceClearRequest request,
+        CancellationToken cancellationToken) =>
+        InvokeClientAsync(client => client.ClearAttendance(request), cancellationToken);
+
     public Task RestartAsync(CancellationToken cancellationToken) =>
         InvokeAsync(() =>
         {

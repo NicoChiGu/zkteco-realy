@@ -2,7 +2,9 @@
 
 ## 开发文档
 
+- 完整 API 端点索引：[`docs/API_REFERENCE.md`](docs/API_REFERENCE.md)
 - 详细 API 请求、响应与接入示例：[`docs/API.md`](docs/API.md)
+- 考勤查询、分页与清理：[`docs/ATTENDANCE_API.md`](docs/ATTENDANCE_API.md)
 - OpenAPI 3.0 定义：[`docs/openapi.yaml`](docs/openapi.yaml)
 - 实时事件 WebSocket：[`docs/REALTIME_EVENTS.md`](docs/REALTIME_EVENTS.md)
 - 人员、生物特征与门禁扩展接口：[`docs/EXTENDED_API.md`](docs/EXTENDED_API.md)
@@ -299,6 +301,8 @@ GET  /api/v1/devices/{deviceId}
 POST /api/v1/devices/{deviceId}/connect
 POST /api/v1/devices/{deviceId}/disconnect
 GET  /api/v1/devices/{deviceId}/attendance
+GET  /api/v1/devices/{deviceId}/attendance/query
+POST /api/v1/devices/{deviceId}/attendance/clear
 POST /api/v1/devices/{deviceId}/restart
 GET  /api/v1/events/ws                 WebSocket 实时事件
 GET/PUT/DELETE /api/v1/devices/{deviceId}/users/...
@@ -310,6 +314,13 @@ GET/PUT /api/v1/devices/{deviceId}/access/time-zones/...
 GET/PUT /api/v1/devices/{deviceId}/access/groups/...
 GET/PUT /api/v1/devices/{deviceId}/access/users/...
 GET/PUT /api/v1/devices/{deviceId}/access/unlock-combinations/...
+```
+
+服务启动后还可访问：
+
+```text
+GET /docs/          Swagger UI
+GET /openapi.yaml   完整 OpenAPI 3.0 定义
 ```
 
 连接设备示例：

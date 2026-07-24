@@ -113,6 +113,40 @@ public sealed class DeviceManager : IDisposable
         CancellationToken cancellationToken) =>
         GetRequiredSession(deviceId).ReadAttendanceAsync(cancellationToken);
 
+    public async Task<AttendancePage> QueryAttendanceAsync(
+        string deviceId,
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int page,
+        int pageSize,
+        CancellationToken cancellationToken)
+    {
+        ValidateAttendanceQuery(from, to, page, pageSize);
+        var records = await GetRequiredSession(deviceId).ReadAttendanceAsync(from, to, cancellationToken);
+        var totalItems = records.Count;
+        var totalPages = totalItems == 0
+            ? 0
+            : (int)Math.Ceiling(totalItems / (double)pageSize);
+        var skip = (long)(page - 1) * pageSize;
+        var items = skip >= totalItems
+            ? Array.Empty<AttendanceRecord>()
+            : records
+                .Skip((int)skip)
+                .Take(pageSize)
+                .ToArray();
+
+        return new AttendancePage(items, page, pageSize, totalItems, totalPages, from, to);
+    }
+
+    public Task<OperationResult> ClearAttendanceAsync(
+        string deviceId,
+        AttendanceClearRequest request,
+        CancellationToken cancellationToken)
+    {
+        ValidateAttendanceClear(request);
+        return GetRequiredSession(deviceId).ClearAttendanceAsync(request, cancellationToken);
+    }
+
     public Task RestartAsync(string deviceId, CancellationToken cancellationToken) =>
         GetRequiredSession(deviceId).RestartAsync(cancellationToken);
 
@@ -162,6 +196,51 @@ public sealed class DeviceManager : IDisposable
         if (request.Port is < 1 or > 65535)
         {
             throw new ArgumentException("Port must be between 1 and 65535.");
+        }
+    }
+
+    private static void ValidateAttendanceQuery(
+        DateTimeOffset? from,
+        DateTimeOffset? to,
+        int page,
+        int pageSize)
+    {
+        if (page < 1)
+        {
+            throw new ArgumentException("page must be greater than or equal to 1.");
+        }
+
+        if (pageSize is < 1 or > 1000)
+        {
+            throw new ArgumentException("pageSize must be between 1 and 1000.");
+        }
+
+        if (from.HasValue && to.HasValue && from.Value > to.Value)
+        {
+            throw new ArgumentException("from must be earlier than or equal to to.");
+        }
+    }
+
+    private static void ValidateAttendanceClear(AttendanceClearRequest request)
+    {
+        if (!request.Confirm)
+        {
+            throw new ArgumentException("confirm must be true before attendance records can be deleted.");
+        }
+
+        if (request.Before.HasValue && (request.From.HasValue || request.To.HasValue))
+        {
+            throw new ArgumentException("before cannot be combined with from or to.");
+        }
+
+        if (request.From.HasValue != request.To.HasValue)
+        {
+            throw new ArgumentException("from and to must be supplied together.");
+        }
+
+        if (request.From.HasValue && request.From.Value > request.To!.Value)
+        {
+            throw new ArgumentException("from must be earlier than or equal to to.");
         }
     }
 
