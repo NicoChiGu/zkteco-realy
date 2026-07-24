@@ -53,51 +53,60 @@ internal static class SdkHealthChecker
 
         var candidates = new List<string>
         {
-            Path.Combine(baseDir, "dll", architecture, "zkemkeeper.dll"),
-            Path.Combine(baseDir, "dll", "zkemkeeper.dll"),
-            Path.Combine(baseDir, "..", "dll", architecture, "zkemkeeper.dll"),
-            Path.Combine(baseDir, "..", "dll", "zkemkeeper.dll"),
-            Path.Combine(baseDir, "sdk", architecture, "zkemkeeper.dll"),
-            Path.Combine(baseDir, "..", "docs", "脱机通讯开发包-6.3.1.55", "SDK", architecture, "zkemkeeper.dll")
+            Path.Combine(baseDir, "dll", architecture),
+            Path.Combine(baseDir, "dll"),
+            Path.Combine(baseDir, "..", "dll", architecture),
+            Path.Combine(baseDir, "..", "dll"),
+            Path.Combine(baseDir, "sdk", architecture),
+            Path.Combine(baseDir, "..", "docs", "脱机通讯开发包-6.3.1.55", "SDK", architecture)
         };
 
-        var currentCheck = Check();
-        if (!string.IsNullOrWhiteSpace(currentCheck.ComServerPath))
+        string? sourceDir = null;
+        foreach (var dir in candidates)
         {
-            candidates.Add(currentCheck.ComServerPath);
+            if (Directory.Exists(dir) && File.Exists(Path.Combine(dir, "zkemkeeper.dll")))
+            {
+                sourceDir = Path.GetFullPath(dir);
+                break;
+            }
         }
-
-        var targetDllPath = candidates.FirstOrDefault(File.Exists);
-
-        if (targetDllPath is null)
-        {
-            var searchPathsMsg = string.Join("\n", candidates.Distinct());
-            return new SdkRepairResult(
-                false,
-                architecture,
-                null,
-                $"未找到与当前 {architecture} 架构匹配的 zkemkeeper.dll。已搜索路径：\n{searchPathsMsg}",
-                currentCheck);
-        }
-
-        targetDllPath = Path.GetFullPath(targetDllPath);
-        var targetDir = Path.GetDirectoryName(targetDllPath)!;
 
         var windir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
-        var sysWow64 = Path.Combine(windir, "SysWOW64", "regsvr32.exe");
-        var system32 = Path.Combine(windir, "System32", "regsvr32.exe");
+        var targetSystemDir = Environment.Is64BitProcess
+            ? Path.Combine(windir, "System32")
+            : (Environment.Is64BitOperatingSystem ? Path.Combine(windir, "SysWOW64") : Path.Combine(windir, "System32"));
 
-        var regsvr32Path = (!Environment.Is64BitProcess && File.Exists(sysWow64))
-            ? sysWow64
-            : system32;
+        if (sourceDir is null)
+        {
+            var existingInSys = Path.Combine(targetSystemDir, "zkemkeeper.dll");
+            if (File.Exists(existingInSys))
+            {
+                sourceDir = targetSystemDir;
+            }
+            else
+            {
+                var searched = string.Join("\n", candidates.Distinct());
+                return new SdkRepairResult(
+                    false,
+                    architecture,
+                    null,
+                    $"未找到与当前 {architecture} 架构匹配的 DLL 来源目录。已搜索路径：\n{searched}",
+                    Check());
+            }
+        }
+
+        var targetDllPath = Path.Combine(targetSystemDir, "zkemkeeper.dll");
+        var regsvr32Path = Path.Combine(targetSystemDir, "regsvr32.exe");
 
         try
         {
+            var psCommand = $"Copy-Item -Path '{sourceDir}\\*.dll' -Destination '{targetSystemDir}' -Force; Start-Process '{regsvr32Path}' -ArgumentList '/s', '\"{targetDllPath}\"' -Wait";
+
             var startInfo = new ProcessStartInfo
             {
-                FileName = regsvr32Path,
-                Arguments = $"/s \"{targetDllPath}\"",
-                WorkingDirectory = targetDir,
+                FileName = "powershell.exe",
+                Arguments = $"-NoProfile -ExecutionPolicy Bypass -Command \"{psCommand}\"",
+                WorkingDirectory = sourceDir,
                 UseShellExecute = true,
                 Verb = "runas"
             };
@@ -105,7 +114,7 @@ internal static class SdkHealthChecker
             using var process = Process.Start(startInfo);
             if (process is not null)
             {
-                process.WaitForExit(15000);
+                process.WaitForExit(20000);
             }
 
             var postCheck = Check();
@@ -115,7 +124,7 @@ internal static class SdkHealthChecker
                     true,
                     architecture,
                     targetDllPath,
-                    $"已成功重新注册 ZKTeco {architecture} COM SDK：\n{targetDllPath}",
+                    $"已成功将 DLL 复制到 {targetSystemDir} 并完成 COM SDK 注册：\n{targetDllPath}",
                     postCheck);
             }
 
@@ -124,7 +133,7 @@ internal static class SdkHealthChecker
                 false,
                 architecture,
                 targetDllPath,
-                $"已执行 regsvr32 注册，但 SDK 健康检查仍未通过：\n{errors}",
+                $"已执行 DLL 复制与 regsvr32 注册，但 SDK 健康检查仍未通过：\n{errors}",
                 postCheck);
         }
         catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
@@ -134,7 +143,7 @@ internal static class SdkHealthChecker
                 architecture,
                 targetDllPath,
                 "用户取消了管理员权限提权请求，重新注册已中止。",
-                currentCheck);
+                Check());
         }
         catch (Exception ex)
         {
@@ -142,8 +151,8 @@ internal static class SdkHealthChecker
                 false,
                 architecture,
                 targetDllPath,
-                $"重新注册 DLL 时发生异常：{ex.Message}",
-                currentCheck);
+                $"复制并注册 DLL 时发生异常：{ex.Message}",
+                Check());
         }
     }
 
