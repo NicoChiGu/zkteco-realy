@@ -17,6 +17,7 @@ public sealed class MainForm : Form
     private readonly Button _stop = new() { Text = "停止 API", AutoSize = true, Enabled = false };
     private readonly Button _openHealth = new() { Text = "打开健康检查", AutoSize = true, Enabled = false };
     private readonly Button _checkSdk = new() { Text = "检查 SDK / DLL", AutoSize = true };
+    private readonly Button _repairSdk = new() { Text = "修复/重新注册 DLL", AutoSize = true };
     private readonly TextBox _updateRepository = new() { Width = 300, Text = "NicoChiGu/zkteco-realy" };
     private readonly TextBox _githubProxy = new() { Width = 430, PlaceholderText = "仅用于 Release 下载，例如：https://gh-proxy.org/" };
     private readonly Button _checkUpdate = new() { Text = "检查更新", AutoSize = true };
@@ -98,7 +99,7 @@ public sealed class MainForm : Form
         settings.Controls.Add(_minimizeToTray, 1, 8);
 
         var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top };
-        actions.Controls.AddRange([_save, _checkSdk, _checkUpdate, _cancelUpdate, _start, _stop, _openHealth]);
+        actions.Controls.AddRange([_save, _checkSdk, _repairSdk, _checkUpdate, _cancelUpdate, _start, _stop, _openHealth]);
 
         var statuses = new FlowLayoutPanel
         {
@@ -124,6 +125,7 @@ public sealed class MainForm : Form
         _stop.Click += async (_, _) => await StopApiAsync();
         _openHealth.Click += (_, _) => OpenHealthPage();
         _checkSdk.Click += (_, _) => CheckSdkHealth(showDialog: true);
+        _repairSdk.Click += (_, _) => RepairSdk();
         _checkUpdate.Click += async (_, _) => await CheckForUpdatesAsync();
         _cancelUpdate.Click += (_, _) => _updateDownloadCts?.Cancel();
         Resize += OnResize;
@@ -370,6 +372,49 @@ public sealed class MainForm : Form
         return result;
     }
 
+    private void RepairSdk()
+    {
+        AppendLog("开始尝试修复/重新注册 ZKTeco SDK DLL...");
+        var result = SdkHealthChecker.Repair();
+
+        _sdkStatus.Text = result.HealthResult.IsHealthy
+            ? $"SDK 状态：正常（{result.Architecture}）"
+            : $"SDK 状态：异常（{result.Architecture}）";
+        _sdkStatus.ForeColor = result.HealthResult.IsHealthy ? Color.DarkGreen : Color.DarkRed;
+
+        if (result.FoundPath is not null)
+        {
+            AppendLog($"修复所用 DLL 路径：{result.FoundPath}");
+        }
+
+        if (result.Message is not null)
+        {
+            AppendLog(result.Message);
+        }
+
+        foreach (var detail in result.HealthResult.Details)
+        {
+            AppendLog($"SDK：{detail}");
+        }
+
+        foreach (var warning in result.HealthResult.Warnings)
+        {
+            AppendLog($"SDK 警告：{warning}");
+        }
+
+        foreach (var error in result.HealthResult.Errors)
+        {
+            AppendLog($"SDK 错误：{error}");
+        }
+
+        MessageBox.Show(
+            this,
+            result.Message,
+            result.Success ? "DLL 修复成功" : "DLL 修复失败",
+            MessageBoxButtons.OK,
+            result.Success ? MessageBoxIcon.Information : MessageBoxIcon.Error);
+    }
+
     private async Task CheckForUpdatesAsync()
     {
         try
@@ -468,6 +513,7 @@ public sealed class MainForm : Form
         UseWaitCursor = busy;
         _save.Enabled = !busy && _application is null;
         _checkSdk.Enabled = !busy && _application is null;
+        _repairSdk.Enabled = !busy && _application is null;
         _checkUpdate.Enabled = !busy;
     }
 

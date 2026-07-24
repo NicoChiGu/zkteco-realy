@@ -13,6 +13,13 @@ internal sealed record SdkHealthResult(
     IReadOnlyList<string> Warnings,
     IReadOnlyList<string> Details);
 
+internal sealed record SdkRepairResult(
+    bool Success,
+    string Architecture,
+    string? FoundPath,
+    string? Message,
+    SdkHealthResult HealthResult);
+
 internal static class SdkHealthChecker
 {
     private static readonly string[] CoreDependencies =
@@ -38,6 +45,107 @@ internal static class SdkHealthChecker
         "rscomm.dll",
         "usbcomm.dll"
     ];
+
+    public static SdkRepairResult Repair()
+    {
+        var architecture = Environment.Is64BitProcess ? "x64" : "x86";
+        var baseDir = AppContext.BaseDirectory;
+
+        var candidates = new List<string>
+        {
+            Path.Combine(baseDir, "dll", architecture, "zkemkeeper.dll"),
+            Path.Combine(baseDir, "dll", "zkemkeeper.dll"),
+            Path.Combine(baseDir, "..", "dll", architecture, "zkemkeeper.dll"),
+            Path.Combine(baseDir, "..", "dll", "zkemkeeper.dll"),
+            Path.Combine(baseDir, "sdk", architecture, "zkemkeeper.dll"),
+            Path.Combine(baseDir, "..", "docs", "脱机通讯开发包-6.3.1.55", "SDK", architecture, "zkemkeeper.dll")
+        };
+
+        var currentCheck = Check();
+        if (!string.IsNullOrWhiteSpace(currentCheck.ComServerPath))
+        {
+            candidates.Add(currentCheck.ComServerPath);
+        }
+
+        var targetDllPath = candidates.FirstOrDefault(File.Exists);
+
+        if (targetDllPath is null)
+        {
+            var searchPathsMsg = string.Join("\n", candidates.Distinct());
+            return new SdkRepairResult(
+                false,
+                architecture,
+                null,
+                $"未找到与当前 {architecture} 架构匹配的 zkemkeeper.dll。已搜索路径：\n{searchPathsMsg}",
+                currentCheck);
+        }
+
+        targetDllPath = Path.GetFullPath(targetDllPath);
+        var targetDir = Path.GetDirectoryName(targetDllPath)!;
+
+        var windir = Environment.GetFolderPath(Environment.SpecialFolder.Windows);
+        var sysWow64 = Path.Combine(windir, "SysWOW64", "regsvr32.exe");
+        var system32 = Path.Combine(windir, "System32", "regsvr32.exe");
+
+        var regsvr32Path = (!Environment.Is64BitProcess && File.Exists(sysWow64))
+            ? sysWow64
+            : system32;
+
+        try
+        {
+            var startInfo = new ProcessStartInfo
+            {
+                FileName = regsvr32Path,
+                Arguments = $"/s \"{targetDllPath}\"",
+                WorkingDirectory = targetDir,
+                UseShellExecute = true,
+                Verb = "runas"
+            };
+
+            using var process = Process.Start(startInfo);
+            if (process is not null)
+            {
+                process.WaitForExit(15000);
+            }
+
+            var postCheck = Check();
+            if (postCheck.IsHealthy)
+            {
+                return new SdkRepairResult(
+                    true,
+                    architecture,
+                    targetDllPath,
+                    $"已成功重新注册 ZKTeco {architecture} COM SDK：\n{targetDllPath}",
+                    postCheck);
+            }
+
+            var errors = string.Join("\n", postCheck.Errors);
+            return new SdkRepairResult(
+                false,
+                architecture,
+                targetDllPath,
+                $"已执行 regsvr32 注册，但 SDK 健康检查仍未通过：\n{errors}",
+                postCheck);
+        }
+        catch (System.ComponentModel.Win32Exception ex) when (ex.NativeErrorCode == 1223)
+        {
+            return new SdkRepairResult(
+                false,
+                architecture,
+                targetDllPath,
+                "用户取消了管理员权限提权请求，重新注册已中止。",
+                currentCheck);
+        }
+        catch (Exception ex)
+        {
+            return new SdkRepairResult(
+                false,
+                architecture,
+                targetDllPath,
+                $"重新注册 DLL 时发生异常：{ex.Message}",
+                currentCheck);
+        }
+    }
 
     public static SdkHealthResult Check()
     {

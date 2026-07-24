@@ -53,12 +53,13 @@ zkteco-relay-win-x86
 ```text
 api/ZktecoRelay.exe
 manager/ZktecoRelay.Manager.exe
+dll/ (包含 x64 与 x86 厂商 DLL 及其注册脚本)
 .env.example
 README.md
-scripts/install-sdk-x64.ps1 或 scripts/install-sdk-x86.ps1
+scripts/install-sdk-x64.ps1 与 scripts/install-sdk-x86.ps1
 ```
 
-两个 EXE 都按 self-contained、single-file 方式发布，目标机器不需要预先安装 .NET Runtime。ZKTeco 厂商 DLL 不进入 GitHub 构建包，需要在目标 Windows 主机上从授权开发包中安装并注册。
+两个 EXE 都按 self-contained、single-file 方式发布，目标机器不需要预先安装 .NET Runtime。ZKTeco 厂商 DLL 已完整内嵌至安装包（`setup.exe`）与压缩包（`.zip`）中。使用安装包安装时，安装程序会自动根据用户系统架构自动完成 COM DLL (`zkemkeeper.dll`) 的注册。
 
 推送 `v*` 标签时，工作流还会自动创建 GitHub Release，并上传：
 
@@ -100,7 +101,7 @@ git push origin v1.2.0
 - 打开 `/health` 健康检查。
 - 显示启动和停止日志，但不显示密钥。
 - 启动时自动检查 ZKTeco COM 注册、DLL 位数、关键依赖和 COM 实例化。
-- 提供“检查 SDK / DLL”按钮，可查看 DLL 路径、版本、缺失依赖及修复提示。
+- 提供“检查 SDK / DLL”与“修复/重新注册 DLL”按钮，支持一键查看 DLL 路径/版本，或直接以管理员权限重新注册 `zkemkeeper.dll` 完成组件修复。
 - 最小化或关闭窗口时可隐藏到系统托盘；双击托盘图标恢复窗口。
 - 托盘菜单支持启动/停止 API、打开健康检查和退出程序。
 - 设备连接配置写入 SQLite，API 或 Windows 重启后可自动恢复连接。
@@ -232,11 +233,14 @@ ZKTECO_ALLOWED_NETWORKS=127.0.0.1/32,::1/128
 .\api\ZktecoRelay.exe
 ```
 
-## SDK 安装
+## SDK 安装与 COM 注册
 
 EXE 位数必须与已注册的 ZKTeco COM SDK 位数一致。GUI 管理器会从对应位数的 Windows 注册表视图读取 `zkemkeeper` COM 注册信息，并实际创建一次 COM 对象验证安装状态。
 
-### x64 包
+- **使用 Installer (`setup.exe`) 安装**：安装程序在安装过程中会自动判断目标系统的 64 位/32 位架构，并自动将内嵌的 `zkemkeeper.dll` 及其依赖注册到 Windows COM 组件中；卸载时也会自动注销。
+- **使用 Portable ZIP 压缩包**：压缩包内已内嵌 `dll/x64` 与 `dll/x86` 目录。解压后可按需运行注册脚本：
+
+### x64 手动注册脚本
 
 以管理员身份运行：
 
@@ -244,7 +248,7 @@ EXE 位数必须与已注册的 ZKTeco COM SDK 位数一致。GUI 管理器会�
 powershell -ExecutionPolicy Bypass -File .\scripts\install-sdk-x64.ps1
 ```
 
-### x86 包
+### x86 手动注册脚本
 
 以管理员身份运行：
 
@@ -252,14 +256,7 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-sdk-x64.ps1
 powershell -ExecutionPolicy Bypass -File .\scripts\install-sdk-x86.ps1
 ```
 
-仓库内脚本默认从以下相邻开发包目录复制 DLL：
-
-```text
-..\docs\脱机通讯开发包-6.3.1.55\SDK\x64
-..\docs\脱机通讯开发包-6.3.1.55\SDK\x86
-```
-
-若使用 GitHub 下载的 Artifact，请先将对应架构的厂商 DLL 放到 `sdk\x64` 或 `sdk\x86`，或根据实际开发包路径调整安装脚本。
+脚本会优先从内嵌的 `dll\x64` / `dll\x86` 目录自动读取并注册 `zkemkeeper.dll`。
 
 ## 本地开发
 
