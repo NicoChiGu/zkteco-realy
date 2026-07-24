@@ -28,7 +28,7 @@ AppId={{9D98A71E-B56D-4F0F-8E97-11C40CF9D4A2}
 AppName={#AppName}
 AppVersion={#AppVersion}
 AppPublisher={#Publisher}
-DefaultDirName={localappdata}\Programs\ZKTeco Relay
+DefaultDirName={autopf}\ZKTeco Relay
 DefaultGroupName={#AppName}
 OutputDir={#OutputDir}
 OutputBaseFilename=zkteco-relay-win-{#Architecture}-setup
@@ -80,16 +80,7 @@ Filename: "{code:GetRegsvr32X86}"; Parameters: "/s ""{app}\dll\x86\zkemkeeper.dl
 Filename: "{sys}\regsvr32.exe"; Parameters: "/s ""{app}\dll\zkemkeeper.dll"""; WorkingDir: "{app}\dll"; Check: HasDllRoot; StatusMsg: "正在注册 ZKTeco COM SDK (zkemkeeper.dll)..."; Flags: runhidden
 Filename: "{app}\manager\{#ManagerExe}"; Description: "启动 ZKTeco Relay 管理器"; Flags: nowait postinstall skipifsilent
 
-[UninstallRun]
-Filename: "{code:GetRegsvr32X64}"; Parameters: "/u /s ""{app}\dll\x64\zkemkeeper.dll"""; WorkingDir: "{app}\dll\x64"; Check: ShouldUnregisterDllX64; StatusMsg: "正在注销 ZKTeco x64 COM SDK..."; Flags: runhidden
-Filename: "{code:GetRegsvr32X86}"; Parameters: "/u /s ""{app}\dll\x86\zkemkeeper.dll"""; WorkingDir: "{app}\dll\x86"; Check: ShouldUnregisterDllX86; StatusMsg: "正在注销 ZKTeco x86 COM SDK..."; Flags: runhidden
-Filename: "{sys}\regsvr32.exe"; Parameters: "/u /s ""{app}\dll\zkemkeeper.dll"""; WorkingDir: "{app}\dll"; Check: ShouldUnregisterDllRoot; StatusMsg: "正在注销 ZKTeco COM SDK..."; Flags: runhidden
-
 [Code]
-var
-  UnregisterDllPrompted: Boolean;
-  ShouldUnregisterDll: Boolean;
-
 function HasDllX64: Boolean;
 begin
   Result := IsWin64 and FileExists(ExpandConstant('{app}\dll\x64\zkemkeeper.dll'));
@@ -107,41 +98,6 @@ begin
             not FileExists(ExpandConstant('{app}\dll\x86\zkemkeeper.dll'));
 end;
 
-function PromptUnregisterDll: Boolean;
-var
-  Res: Integer;
-begin
-  if not UnregisterDllPrompted then
-  begin
-    UnregisterDllPrompted := True;
-    Res := MsgBox(
-      '是否取消注册 (注销) ZKTeco COM SDK (zkemkeeper.dll) 组件？' + #13#10 + #13#10 +
-      '取消注册后，系统中的 zkemkeeper COM 组件将失效。' + #13#10 +
-      '若此机器上有其他软件正在使用该 DLL，建议选择“否”保留注册。' + #13#10 + #13#10 +
-      '是否仍要取消注册？',
-      mbConfirmation,
-      MB_YESNO or MB_DEFBUTTON2
-    );
-    ShouldUnregisterDll := (Res = IDYES);
-  end;
-  Result := ShouldUnregisterDll;
-end;
-
-function ShouldUnregisterDllX64: Boolean;
-begin
-  Result := HasDllX64 and PromptUnregisterDll;
-end;
-
-function ShouldUnregisterDllX86: Boolean;
-begin
-  Result := HasDllX86 and PromptUnregisterDll;
-end;
-
-function ShouldUnregisterDllRoot: Boolean;
-begin
-  Result := HasDllRoot and PromptUnregisterDll;
-end;
-
 function GetRegsvr32X64(Param: String): String;
 begin
   if Is64BitInstallMode then
@@ -156,6 +112,49 @@ begin
     Result := ExpandConstant('{syswow64}\regsvr32.exe')
   else
     Result := ExpandConstant('{sys}\regsvr32.exe');
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Res: Integer;
+  Regsvr32Path: String;
+  ResultCode: Integer;
+begin
+  if CurUninstallStep = usUninstall then
+  begin
+    if HasDllX64 or HasDllX86 or HasDllRoot then
+    begin
+      Res := MsgBox(
+        '是否取消注册 (注销) ZKTeco COM SDK (zkemkeeper.dll) 组件？' + #13#10 + #13#10 +
+        '取消注册后，系统中的 zkemkeeper COM 组件将失效。' + #13#10 +
+        '若此机器上有其他软件正在使用该 DLL，建议选择“否”保留注册。' + #13#10 + #13#10 +
+        '是否仍要取消注册？',
+        mbConfirmation,
+        MB_YESNO or MB_DEFBUTTON2
+      );
+
+      if Res = IDYES then
+      begin
+        if HasDllX64 then
+        begin
+          Regsvr32Path := GetRegsvr32X64('');
+          Exec(Regsvr32Path, '/u /s "' + ExpandConstant('{app}\dll\x64\zkemkeeper.dll') + '"', ExpandConstant('{app}\dll\x64'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        end;
+
+        if HasDllX86 then
+        begin
+          Regsvr32Path := GetRegsvr32X86('');
+          Exec(Regsvr32Path, '/u /s "' + ExpandConstant('{app}\dll\x86\zkemkeeper.dll') + '"', ExpandConstant('{app}\dll\x86'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        end;
+
+        if HasDllRoot then
+        begin
+          Regsvr32Path := ExpandConstant('{sys}\regsvr32.exe');
+          Exec(Regsvr32Path, '/u /s "' + ExpandConstant('{app}\dll\zkemkeeper.dll') + '"', ExpandConstant('{app}\dll'), SW_HIDE, ewWaitUntilTerminated, ResultCode);
+        end;
+      end;
+    end;
+  end;
 end;
 
 function PrepareToInstall(var NeedsRestart: Boolean): String;

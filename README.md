@@ -109,7 +109,7 @@ git push origin v1.2.0
 - 支持配置 Release 下载镜像前缀，例如 `https://gh-proxy.org/`；GitHub API 查询始终直连。
 - SDK 健康检查失败时阻止启动 API，避免服务启动后才在设备连接时失败。
 
-配置保存在管理器 EXE 所在目录的 `.env`。请把程序放到当前用户拥有写权限的目录，不要直接放入需要管理员写权限的系统目录。
+配置优先保存在程序目录下的 `.env`。若安装在 `C:\Program Files` 等普通用户无写权限的系统目录，程序会自动检测并自动回退至用户目录（`%LOCALAPPDATA%\ZktecoRelay\.env`），避免未以管理员身份运行时出现写权限错误。SQLite 数据库亦同理自动回退至 `%LOCALAPPDATA%\ZktecoRelay\data\zkteco-relay.db`。
 
 更新设置：
 
@@ -136,9 +136,9 @@ https://github.com/NicoChiGu/zkteco-realy/releases/download/v1.0.4/zkteco-relay-
 https://gh-proxy.org/https://github.com/NicoChiGu/zkteco-realy/releases/download/v1.0.4/zkteco-relay-win-x64-setup.exe
 ```
 
-同名 `.sha256` 校验文件也使用下载镜像。留空 `ZKTECO_GITHUB_PROXY` 时直接从 GitHub 下载。管理器会优先下载与当前架构匹配的 `setup.exe`，验证 SHA-256 后启动安装程序，停止内置 API 并退出当前版本。安装程序完成覆盖升级，同时保留已有 `.env` 与 SQLite 数据库。
+同名 `.sha256` 校验文件也使用下载镜像。留空 `ZKTECO_GITHUB_PROXY` 时直接从 GitHub 下载。管理器会优先下载与当前架构匹配的 `setup.exe` 并实时显示可视化进度条，更新包会自动保存到系统 Temp 临时目录中（随系统自动清理），无需手动选择路径。在通过 SHA-256 校验后，可直接启动安装程序完成覆盖升级，同时保留已有 `.env` 与 SQLite 数据库。
 
-更新下载开始后，GUI 会启用“取消下载”按钮。取消后会中止 HTTP 请求并删除未完成的 `.download` 临时文件。
+更新下载开始后，GUI 会启用“取消下载”按钮。取消后会中止 HTTP 请求并删除 Temp 目录中的 `.download` 临时文件。
 
 ## 请求日志与 IP 白名单
 

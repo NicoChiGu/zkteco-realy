@@ -2,6 +2,22 @@ namespace ZktecoRelay.Configuration;
 
 public static class DotEnv
 {
+    public static void AutoLoad()
+    {
+        var appDataEnv = Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "ZktecoRelay",
+            ".env");
+        var baseEnv = Path.Combine(AppContext.BaseDirectory, ".env");
+        var parentEnv = Path.Combine(AppContext.BaseDirectory, "..", ".env");
+        var currentEnv = Path.Combine(Directory.GetCurrentDirectory(), ".env");
+
+        Load(appDataEnv);
+        Load(baseEnv);
+        Load(parentEnv);
+        Load(currentEnv);
+    }
+
     public static void Load(string path)
     {
         if (!File.Exists(path))

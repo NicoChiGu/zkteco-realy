@@ -12,9 +12,28 @@ public sealed class DeviceConfigurationStore
     public DeviceConfigurationStore()
     {
         var configuredPath = Environment.GetEnvironmentVariable("ZKTECO_DATABASE_PATH");
-        var databasePath = string.IsNullOrWhiteSpace(configuredPath)
-            ? Path.Combine(AppContext.BaseDirectory, "data", "zkteco-relay.db")
-            : Path.GetFullPath(Environment.ExpandEnvironmentVariables(configuredPath));
+        string databasePath;
+
+        if (!string.IsNullOrWhiteSpace(configuredPath))
+        {
+            databasePath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(configuredPath));
+        }
+        else
+        {
+            var baseDataDir = Path.Combine(AppContext.BaseDirectory, "data");
+            if (IsDirectoryWritable(baseDataDir))
+            {
+                databasePath = Path.Combine(baseDataDir, "zkteco-relay.db");
+            }
+            else
+            {
+                var appDataDataDir = Path.Combine(
+                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+                    "ZktecoRelay",
+                    "data");
+                databasePath = Path.Combine(appDataDataDir, "zkteco-relay.db");
+            }
+        }
 
         Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
         _connectionString = new SqliteConnectionStringBuilder
@@ -25,6 +44,28 @@ public sealed class DeviceConfigurationStore
         }.ToString();
 
         Initialize();
+    }
+
+    private static bool IsDirectoryWritable(string directoryPath)
+    {
+        try
+        {
+            if (!Directory.Exists(directoryPath))
+            {
+                Directory.CreateDirectory(directoryPath);
+            }
+
+            var testFile = Path.Combine(directoryPath, $".perm_test_{Guid.NewGuid():N}.tmp");
+            using (var stream = File.Create(testFile, 1, FileOptions.DeleteOnClose))
+            {
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     public IReadOnlyList<DeviceConfigurationView> GetViews()

@@ -36,6 +36,14 @@ public sealed class MainForm : Form
     private readonly NotifyIcon _trayIcon = new() { Text = "ZKTeco Relay", Visible = true, Icon = SystemIcons.Application };
     private readonly ContextMenuStrip _trayMenu = new();
     private readonly Label _versionStatus = new() { Text = $"当前版本：{GitHubUpdateService.CurrentVersion}", AutoSize = true };
+    private readonly ProgressBar _updateProgressBar = new()
+    {
+        Width = 430,
+        Height = 16,
+        Minimum = 0,
+        Maximum = 100,
+        Visible = false
+    };
     private readonly Label _sdkStatus = new() { Text = "SDK 状态：尚未检查", AutoSize = true };
     private readonly Label _status = new() { Text = "状态：已停止", AutoSize = true };
     private readonly TextBox _log = new()
@@ -109,6 +117,7 @@ public sealed class MainForm : Form
             WrapContents = false
         };
         statuses.Controls.Add(_versionStatus);
+        statuses.Controls.Add(_updateProgressBar);
         statuses.Controls.Add(_sdkStatus);
         statuses.Controls.Add(_status);
 
@@ -139,11 +148,13 @@ public sealed class MainForm : Form
 
     private string BindUrl => $"http://{(_allowLan.Checked ? "0.0.0.0" : "127.0.0.1")}:{(int)_port.Value}";
     private string BrowserUrl => $"http://127.0.0.1:{(int)_port.Value}/health";
-    private string EnvPath => Path.Combine(AppContext.BaseDirectory, ".env");
+    private string? _currentEnvPath;
+    private string EnvPath => _currentEnvPath ??= EnvSettings.ResolveWritePath();
 
     private void LoadConfiguration()
     {
-        var values = EnvSettings.Read(EnvPath);
+        var values = EnvSettings.ReadResolved(out var loadedPath);
+        _currentEnvPath = loadedPath;
 
         if (values.TryGetValue("ZKTECO_API_KEY", out var key))
         {
@@ -188,7 +199,7 @@ public sealed class MainForm : Form
             _allowLan.Checked = uri.Host is "0.0.0.0" or "*" or "+";
         }
 
-        AppendLog(File.Exists(EnvPath) ? "已读取 .env 配置。" : "尚未创建 .env，请生成或填写 API Key。" );
+        AppendLog(File.Exists(_currentEnvPath) ? $"已读取配置：{_currentEnvPath}" : "尚未创建 .env 配置，保存时将自动生成。" );
     }
 
     private bool SaveConfiguration(bool showMessage)
@@ -200,7 +211,8 @@ public sealed class MainForm : Form
             return false;
         }
 
-        EnvSettings.Write(EnvPath, new Dictionary<string, string>
+        var savePath = EnvSettings.ResolveWritePath();
+        EnvSettings.Write(savePath, new Dictionary<string, string>
         {
             ["ZKTECO_API_KEY"] = key,
             ["ZKTECO_BIND_URL"] = BindUrl,
@@ -211,14 +223,16 @@ public sealed class MainForm : Form
             ["ZKTECO_MINIMIZE_TO_TRAY"] = _minimizeToTray.Checked.ToString().ToLowerInvariant()
         });
 
+        _currentEnvPath = savePath;
+
         Environment.SetEnvironmentVariable("ZKTECO_DATABASE_PATH", _databasePath.Text.Trim());
         Environment.SetEnvironmentVariable("ZKTECO_ALLOWED_NETWORKS", NormalizeAllowedNetworks());
         Environment.SetEnvironmentVariable("ZKTECO_MINIMIZE_TO_TRAY", _minimizeToTray.Checked.ToString().ToLowerInvariant());
 
-        AppendLog($"配置已保存，监听地址：{BindUrl}");
+        AppendLog($"配置已保存：{savePath}，监听地址：{BindUrl}");
         if (showMessage)
         {
-            MessageBox.Show(this, "配置已保存到程序目录的 .env。", "保存成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            MessageBox.Show(this, $"配置已保存至：\n{savePath}", "保存成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
 
         return true;
@@ -446,33 +460,33 @@ public sealed class MainForm : Form
                 return;
             }
 
-            using var folderDialog = new FolderBrowserDialog
-            {
-                Description = "选择更新包保存目录",
-                SelectedPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile), "Downloads"),
-                ShowNewFolderButton = true
-            };
-            if (folderDialog.ShowDialog(this) != DialogResult.OK)
-            {
-                return;
-            }
+            var tempDirectory = Path.Combine(Path.GetTempPath(), "ZktecoRelayUpdate");
+            Directory.CreateDirectory(tempDirectory);
+
+            _updateProgressBar.Value = 0;
+            _updateProgressBar.Visible = true;
 
             _updateDownloadCts = new CancellationTokenSource();
             _cancelUpdate.Enabled = true;
-            AppendLog($"开始下载更新包：{update.Package.Name}" );
-            var progress = new Progress<int>(percent => _versionStatus.Text = $"正在下载 {update.TagName}：{percent}%");
+            AppendLog($"开始下载更新包到系统临时目录：{update.Package.Name}");
+            var progress = new Progress<int>(percent =>
+            {
+                var clamped = Math.Clamp(percent, 0, 100);
+                _updateProgressBar.Value = clamped;
+                _versionStatus.Text = $"正在下载 {update.TagName}：{clamped}%";
+            });
             var savedPath = await GitHubUpdateService.DownloadAsync(
                 settings,
                 update,
-                folderDialog.SelectedPath,
+                tempDirectory,
                 progress,
                 _updateDownloadCts.Token);
             _versionStatus.Text = $"更新包已下载：{update.TagName}";
-            AppendLog($"更新包已下载并通过校验：{savedPath}" );
+            AppendLog($"更新包已保存到临时目录并通过校验：{savedPath}");
 
             var install = MessageBox.Show(
                 this,
-                $"安装程序已下载并通过 SHA-256 校验：\n{savedPath}\n\n是否立即启动安装程序？安装程序会关闭当前版本并完成覆盖升级。",
+                $"安装程序已下载至系统临时目录并通过 SHA-256 校验：\n{savedPath}\n\n是否立即启动安装程序？安装程序会关闭当前版本并完成覆盖升级。",
                 "更新已就绪",
                 MessageBoxButtons.YesNo,
                 MessageBoxIcon.Information);
@@ -492,15 +506,17 @@ public sealed class MainForm : Form
         catch (OperationCanceledException)
         {
             _versionStatus.Text = $"当前版本：{GitHubUpdateService.CurrentVersion}；下载已取消";
-            AppendLog("用户已取消更新下载，临时文件已清理。" );
+            AppendLog("用户已取消更新下载，临时文件已清理。");
         }
         catch (Exception ex)
         {
-            AppendLog($"检查或下载更新失败：{ex.Message}" );
+            AppendLog($"检查或下载更新失败：{ex.Message}");
             MessageBox.Show(this, ex.Message, "更新失败", MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
         finally
         {
+            _updateProgressBar.Visible = false;
+            _updateProgressBar.Value = 0;
             _cancelUpdate.Enabled = false;
             _updateDownloadCts?.Dispose();
             _updateDownloadCts = null;

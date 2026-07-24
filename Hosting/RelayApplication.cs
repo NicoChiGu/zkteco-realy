@@ -19,8 +19,7 @@ public static partial class RelayApplication
 {
     public static WebApplication Build(string[] args, RelayOverrides? overrides = null)
     {
-        DotEnv.Load(Path.Combine(Directory.GetCurrentDirectory(), ".env"));
-        DotEnv.Load(Path.Combine(AppContext.BaseDirectory, ".env"));
+        DotEnv.AutoLoad();
 
         var builder = WebApplication.CreateBuilder(args);
         builder.Services.AddSingleton<DeviceConfigurationStore>();
