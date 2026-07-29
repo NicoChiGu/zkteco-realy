@@ -61,12 +61,6 @@ jobs:
           "APP_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
           Write-Host "Application version: $version"
 
-      - name: Restore API
-        run: dotnet restore .\ZktecoRelay.csproj -r ${{ matrix.runtime }}
-
-      - name: Restore manager
-        run: dotnet restore .\Manager\ZktecoRelay.Manager.csproj -r ${{ matrix.runtime }}
-
       - name: Restore tests
         shell: pwsh
         run: |
@@ -81,6 +75,23 @@ jobs:
             .\tests\ZktecoRelay.Tests\ZktecoRelay.Tests.csproj `
             -c Release `
             --no-restore `
+            -p:PlatformTarget=${{ matrix.platform }}
+
+      # Test restore traverses the API project reference without a runtime
+      # identifier and rewrites obj/project.assets.json. Restore publish
+      # projects afterwards so --no-restore sees the matching RID target.
+      - name: Restore API for publish
+        shell: pwsh
+        run: |
+          dotnet restore .\ZktecoRelay.csproj `
+            -r ${{ matrix.runtime }} `
+            -p:PlatformTarget=${{ matrix.platform }}
+
+      - name: Restore manager for publish
+        shell: pwsh
+        run: |
+          dotnet restore .\Manager\ZktecoRelay.Manager.csproj `
+            -r ${{ matrix.runtime }} `
             -p:PlatformTarget=${{ matrix.platform }}
 
       - name: Publish API executable
