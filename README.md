@@ -99,7 +99,10 @@ git push origin v1.2.0
 - 保存 `.env`。
 - 启动和停止 API。
 - 打开 `/health` 健康检查。
-- 显示启动和停止日志，但不显示密钥。
+- 使用“运行与配置 / 设备管理 / 日志”三个页签分离日常运维任务。
+- “设备管理”从当前 SQLite 数据库读取设备编号、IP、端口、自动连接配置和更新时间，并合并 Relay 运行中的在线状态、最近通信、重连次数、下次重连和最后错误。
+- 可在设备页刷新、立即连接、断开、启停自动连接或删除数据库配置；删除配置不会删除考勤机内的人员和考勤数据。
+- “日志”页显示启动、停止、HTTP 请求、自动重连和运行时日志，但不显示密钥，并支持复制或清空当前会话日志。
 - 启动时自动检查 ZKTeco COM 注册、DLL 位数、关键依赖和 COM 实例化。
 - 提供“检查 SDK / DLL”与“修复/重新注册 DLL”按钮，支持一键查看 DLL 路径/版本，或直接以管理员权限重新注册 `zkemkeeper.dll` 完成组件修复。
 - 最小化或关闭窗口时可隐藏到系统托盘；双击托盘图标恢复窗口。
@@ -142,7 +145,7 @@ https://gh-proxy.org/https://github.com/NicoChiGu/zkteco-realy/releases/download
 
 ## 请求日志与 IP 白名单
 
-GUI 日志区域会显示每个 HTTP/WebSocket 请求的方法、路径、实际来源 IP、响应状态码和耗时。日志不会记录 `X-API-Key`，也不会输出查询字符串中的 WebSocket `apiKey`。
+GUI 的“日志”页会显示每个 HTTP/WebSocket 请求的方法、路径、实际来源 IP、响应状态码和耗时，同时接收 Relay 的 Information、Warning 和 Error 运行日志。日志不会记录 `X-API-Key`，也不会输出查询字符串中的 WebSocket `apiKey`。
 
 允许访问的 IP 地址或 CIDR 网段可在 GUI 的“允许访问 IP/网段”中配置，多个值支持逗号、分号或换行分隔：
 

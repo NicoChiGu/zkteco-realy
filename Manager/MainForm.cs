@@ -5,7 +5,7 @@ using ZktecoRelay.Hosting;
 
 namespace ZktecoRelay.Manager;
 
-public sealed class MainForm : Form
+public sealed partial class MainForm : Form
 {
     private readonly NumericUpDown _port = new() { Minimum = 1, Maximum = 65535, Value = 5080, Width = 140 };
     private readonly CheckBox _allowLan = new() { Text = "允许内网访问（绑定 0.0.0.0）", AutoSize = true };
@@ -61,71 +61,13 @@ public sealed class MainForm : Form
     public MainForm()
     {
         Text = "ZKTeco Relay 管理器";
-        Width = 760;
+        Width = 1120;
         Height = 720;
         StartPosition = FormStartPosition.CenterScreen;
-        MinimumSize = new Size(680, 440);
-
-        var root = new TableLayoutPanel
-        {
-            Dock = DockStyle.Fill,
-            Padding = new Padding(16),
-            ColumnCount = 1,
-            RowCount = 4
-        };
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
-
-        var settings = new TableLayoutPanel
-        {
-            AutoSize = true,
-            Dock = DockStyle.Top,
-            ColumnCount = 3,
-            Padding = new Padding(0, 0, 0, 10)
-        };
-        settings.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-        settings.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
-        settings.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
-
-        settings.Controls.Add(new Label { Text = "API 端口", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 0);
-        settings.Controls.Add(_port, 1, 0);
-        settings.Controls.Add(_allowLan, 1, 1);
-        settings.Controls.Add(new Label { Text = "API Key", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 2);
-        settings.Controls.Add(_apiKey, 1, 2);
-        settings.Controls.Add(_generateKey, 2, 2);
-        settings.Controls.Add(_showKey, 1, 3);
-        settings.Controls.Add(new Label { Text = "更新仓库", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 4);
-        settings.Controls.Add(_updateRepository, 1, 4);
-        settings.Controls.Add(new Label { Text = "下载镜像", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 5);
-        settings.Controls.Add(_githubProxy, 1, 5);
-        settings.Controls.Add(new Label { Text = "SQLite 路径", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 6);
-        settings.Controls.Add(_databasePath, 1, 6);
-        settings.Controls.Add(new Label { Text = "允许访问 IP/网段", AutoSize = true, Anchor = AnchorStyles.Left }, 0, 7);
-        settings.Controls.Add(_allowedNetworks, 1, 7);
-        settings.Controls.Add(_minimizeToTray, 1, 8);
-
-        var actions = new FlowLayoutPanel { AutoSize = true, Dock = DockStyle.Top };
-        actions.Controls.AddRange([_save, _checkSdk, _repairSdk, _checkUpdate, _cancelUpdate, _start, _stop, _openHealth]);
-
-        var statuses = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            Dock = DockStyle.Top,
-            FlowDirection = FlowDirection.TopDown,
-            WrapContents = false
-        };
-        statuses.Controls.Add(_versionStatus);
-        statuses.Controls.Add(_updateProgressBar);
-        statuses.Controls.Add(_sdkStatus);
-        statuses.Controls.Add(_status);
-
-        root.Controls.Add(settings, 0, 0);
-        root.Controls.Add(actions, 0, 1);
-        root.Controls.Add(statuses, 0, 2);
-        root.Controls.Add(_log, 0, 3);
-        Controls.Add(root);
+        MinimumSize = new Size(920, 560);
+        Font = new Font("Segoe UI", 9F);
+        BackColor = Color.FromArgb(246, 247, 249);
+        Controls.Add(BuildMainTabs());
 
         _generateKey.Click += (_, _) => _apiKey.Text = Convert.ToHexString(RandomNumberGenerator.GetBytes(32));
         _showKey.CheckedChanged += (_, _) => _apiKey.UseSystemPasswordChar = !_showKey.Checked;
@@ -144,6 +86,7 @@ public sealed class MainForm : Form
 
         LoadConfiguration();
         CheckSdkHealth(showDialog: false);
+        InitializeDeviceManagement();
     }
 
     private string BindUrl => $"http://{(_allowLan.Checked ? "0.0.0.0" : "127.0.0.1")}:{(int)_port.Value}";
@@ -176,6 +119,10 @@ public sealed class MainForm : Form
             _databasePath.Text = databasePath;
         }
 
+        Environment.SetEnvironmentVariable(
+            "ZKTECO_DATABASE_PATH",
+            _databasePath.Text.Trim());
+
         if (values.TryGetValue("ZKTECO_ALLOWED_NETWORKS", out var allowedNetworks) && !string.IsNullOrWhiteSpace(allowedNetworks))
         {
             _allowedNetworks.Text = allowedNetworks
@@ -199,7 +146,7 @@ public sealed class MainForm : Form
             _allowLan.Checked = uri.Host is "0.0.0.0" or "*" or "+";
         }
 
-        AppendLog(File.Exists(_currentEnvPath) ? $"已读取配置：{_currentEnvPath}" : "尚未创建 .env 配置，保存时将自动生成。" );
+        AppendLog(File.Exists(_currentEnvPath) ? $"已读取配置：{_currentEnvPath}" : "尚未创建 .env 配置，保存时将自动生成。");
     }
 
     private bool SaveConfiguration(bool showMessage)
@@ -234,6 +181,8 @@ public sealed class MainForm : Form
         {
             MessageBox.Show(this, $"配置已保存至：\n{savePath}", "保存成功", MessageBoxButtons.OK, MessageBoxIcon.Information);
         }
+
+        RefreshDeviceGrid(showErrors: false);
 
         return true;
     }
@@ -281,7 +230,8 @@ public sealed class MainForm : Form
             _githubProxy.Enabled = false;
             _databasePath.Enabled = false;
             _allowedNetworks.Enabled = false;
-            AppendLog("API 已启动。除 /health 外，所有请求必须携带 X-API-Key。" );
+            AppendLog("API 已启动。除 /health 外，所有请求必须携带 X-API-Key。");
+            RefreshDeviceGrid(showErrors: false);
         }
         catch (Exception ex)
         {
@@ -313,7 +263,7 @@ public sealed class MainForm : Form
             using var stopCts = new CancellationTokenSource(TimeSpan.FromSeconds(10));
             await _application.StopAsync(stopCts.Token);
             await _application.DisposeAsync();
-            AppendLog("API 已停止。" );
+            AppendLog("API 已停止。");
         }
         catch (Exception ex)
         {
@@ -335,6 +285,7 @@ public sealed class MainForm : Form
             _databasePath.Enabled = true;
             _allowedNetworks.Enabled = true;
             SetBusy(false);
+            RefreshDeviceGrid(showErrors: false);
         }
     }
 
@@ -351,7 +302,7 @@ public sealed class MainForm : Form
             : $"SDK 状态：异常（{result.Architecture}）";
         _sdkStatus.ForeColor = result.IsHealthy ? Color.DarkGreen : Color.DarkRed;
 
-        AppendLog("开始检查 ZKTeco SDK/DLL。" );
+        AppendLog("开始检查 ZKTeco SDK/DLL。");
         foreach (var detail in result.Details)
         {
             AppendLog($"SDK：{detail}");
@@ -367,7 +318,7 @@ public sealed class MainForm : Form
             AppendLog($"SDK 错误：{error}");
         }
 
-        AppendLog(result.IsHealthy ? "SDK/DLL 健康检查通过。" : "SDK/DLL 健康检查失败。" );
+        AppendLog(result.IsHealthy ? "SDK/DLL 健康检查通过。" : "SDK/DLL 健康检查失败。");
 
         if (showDialog)
         {
@@ -434,19 +385,19 @@ public sealed class MainForm : Form
         try
         {
             SetBusy(true);
-            AppendLog("正在检查 GitHub Release 更新。" );
+            AppendLog("正在检查 GitHub Release 更新。");
             var settings = GitHubUpdateService.NormalizeSettings(_updateRepository.Text, _githubProxy.Text);
             var update = await GitHubUpdateService.CheckAsync(settings, CancellationToken.None);
             _versionStatus.Text = $"当前版本：{update.CurrentVersion}；最新版本：{update.LatestVersion}";
 
             if (!update.IsUpdateAvailable)
             {
-                AppendLog($"当前已是最新版本：{update.LatestVersion}。" );
+                AppendLog($"当前已是最新版本：{update.LatestVersion}。");
                 MessageBox.Show(this, $"当前已是最新版本 {update.LatestVersion}。", "无需更新", MessageBoxButtons.OK, MessageBoxIcon.Information);
                 return;
             }
 
-            AppendLog($"发现新版本 {update.TagName}，发布时间：{update.PublishedAt:yyyy-MM-dd HH:mm:ss zzz}。" );
+            AppendLog($"发现新版本 {update.TagName}，发布时间：{update.PublishedAt:yyyy-MM-dd HH:mm:ss zzz}。");
             var message = $"发现新版本 {update.TagName}\n当前版本：{update.CurrentVersion}\n发布名称：{update.ReleaseName}\n\n是否下载 {update.Package.Name}？";
             var choice = MessageBox.Show(this, message, "发现更新", MessageBoxButtons.YesNoCancel, MessageBoxIcon.Information);
             if (choice == DialogResult.Cancel)
@@ -605,6 +556,8 @@ public sealed class MainForm : Form
             _trayMenu.Dispose();
             Close();
         }
+
+        _deviceRefreshTimer.Stop();
     }
 
     private async Task ExitApplicationAsync()
@@ -640,5 +593,7 @@ public sealed class MainForm : Form
         }
 
         _log.AppendText($"[{DateTime.Now:yyyy-MM-dd HH:mm:ss}] {message}{Environment.NewLine}");
+        _logEntryCount++;
+        _logStatus.Text = $"{_logEntryCount:N0} 条 · 当前会话";
     }
 }

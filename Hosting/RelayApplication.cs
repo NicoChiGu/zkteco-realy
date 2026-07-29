@@ -23,6 +23,12 @@ public static partial class RelayApplication
         DotEnv.AutoLoad();
 
         var builder = WebApplication.CreateBuilder(args);
+        if (overrides?.RequestLog is { } applicationLog)
+        {
+            builder.Logging.AddProvider(
+                new CallbackLoggerProvider(applicationLog));
+        }
+
         builder.Services.AddSingleton<RelayDatabase>();
         builder.Services.AddSingleton<DeviceConfigurationStore>();
         builder.Services.AddSingleton<RealtimeEventStore>();

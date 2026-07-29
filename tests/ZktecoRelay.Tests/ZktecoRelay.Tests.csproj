@@ -22,5 +22,6 @@
   </ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\..\ZktecoRelay.csproj" />
+    <ProjectReference Include="..\..\Manager\ZktecoRelay.Manager.csproj" />
   </ItemGroup>
 </Project>
