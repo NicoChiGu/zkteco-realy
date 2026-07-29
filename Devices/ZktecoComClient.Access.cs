@@ -4,6 +4,9 @@ namespace ZktecoRelay.Devices;
 
 internal sealed partial class ZktecoComClient
 {
+    private const int LockDriveTimeDeviceInfo = 5;
+    private const int NormallyOpenLockDriveTime = 255;
+
     public OperationResult UnlockDoor(DoorUnlockRequest request)
     {
         ThrowIfDisposed();
@@ -88,6 +91,7 @@ internal sealed partial class ZktecoComClient
     public OperationResult SetUserAccess(string enrollNumber, UserAccessRequest request)
     {
         ThrowIfDisposed();
+        ValidateWritableEnrollNumber(enrollNumber);
         if (!int.TryParse(enrollNumber, out var userId))
         {
             throw new ArgumentException("Access-control group APIs require a numeric enrollNumber.");
@@ -139,5 +143,190 @@ internal sealed partial class ZktecoComClient
             request.Group4,
             request.Group5);
         return ok ? new OperationResult(true) : Failure("SSR_SetUnLockGroup");
+    }
+
+    public DeviceCapabilities GetCapabilities()
+    {
+        ThrowIfDisposed();
+        var errors = new List<string>();
+        var pinWidth = TryGetDeviceInfo(76, "PIN2Width", errors);
+        var supportsAlphabeticPinValue = TryGetDeviceInfo(77, "IsSupportABCPin", errors);
+        int? accessControlFunction = null;
+        var supportsDoorState = false;
+        bool? supportsUserPhotoDownload = null;
+
+        try
+        {
+            var value = 0;
+            if (_sdk.GetACFun(out value))
+            {
+                accessControlFunction = value;
+            }
+            else
+            {
+                errors.Add($"GetACFun failed with vendor error {GetLastError()}.");
+            }
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"GetACFun is unavailable: {ex.Message}");
+        }
+
+        try
+        {
+            var state = 0;
+            supportsDoorState = _sdk.GetDoorState(MachineNumber, out state);
+            if (!supportsDoorState)
+            {
+                errors.Add($"GetDoorState failed with vendor error {GetLastError()}.");
+            }
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"GetDoorState is unavailable: {ex.Message}");
+        }
+
+        try
+        {
+            supportsUserPhotoDownload = _sdk.IsNewFirmwareMachine(MachineNumber);
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"IsNewFirmwareMachine is unavailable: {ex.Message}");
+        }
+
+        return new DeviceCapabilities(
+            pinWidth,
+            supportsAlphabeticPinValue.HasValue
+                ? supportsAlphabeticPinValue.Value != 0
+                : null,
+            accessControlFunction,
+            accessControlFunction is 6 or 14 or 15,
+            accessControlFunction == 14,
+            supportsDoorState,
+            supportsUserPhotoDownload,
+            SupportsAttendanceRangeQuery: true,
+            errors);
+    }
+
+    public DoorStateResult GetDoorState()
+    {
+        ThrowIfDisposed();
+        var state = 0;
+        if (!_sdk.GetDoorState(MachineNumber, out state))
+        {
+            throw VendorFailure("GetDoorState");
+        }
+
+        return new DoorStateResult(state == 1, state);
+    }
+
+    public DoorModeResult StartNormallyOpen()
+    {
+        ThrowIfDisposed();
+        var capabilities = GetCapabilities();
+        if (!capabilities.SupportsNormallyOpen)
+        {
+            throw new CapabilityNotSupportedException(
+                $"The connected device does not report normally-open support (ACFun={capabilities.AccessControlFunction?.ToString() ?? "unknown"}).");
+        }
+
+        var previousLockDriveTime = GetRequiredDeviceInfo(
+            LockDriveTimeDeviceInfo,
+            "lock drive time");
+        if (previousLockDriveTime != NormallyOpenLockDriveTime &&
+            !_sdk.SetDeviceInfo(
+                MachineNumber,
+                LockDriveTimeDeviceInfo,
+                NormallyOpenLockDriveTime))
+        {
+            throw VendorFailure("SetDeviceInfo(5,255)");
+        }
+
+        _sdk.RefreshData(MachineNumber);
+        return new DoorModeResult(
+            NormallyOpen: true,
+            LockDriveTime: NormallyOpenLockDriveTime,
+            PreviousLockDriveTime: previousLockDriveTime,
+            DoorOpen: TryReadDoorOpen());
+    }
+
+    public DoorModeResult EndNormallyOpen(EndNormallyOpenRequest request)
+    {
+        ThrowIfDisposed();
+        if (request.RestoreLockDriveTime is < 0 or >= NormallyOpenLockDriveTime)
+        {
+            throw new ArgumentException(
+                "restoreLockDriveTime must be between 0 and 254.");
+        }
+
+        var previousLockDriveTime = GetRequiredDeviceInfo(
+            LockDriveTimeDeviceInfo,
+            "lock drive time");
+        if (!_sdk.SetDeviceInfo(
+                MachineNumber,
+                LockDriveTimeDeviceInfo,
+                request.RestoreLockDriveTime))
+        {
+            throw VendorFailure("SetDeviceInfo(5,restoreLockDriveTime)");
+        }
+
+        _sdk.RefreshData(MachineNumber);
+        return new DoorModeResult(
+            NormallyOpen: false,
+            LockDriveTime: request.RestoreLockDriveTime,
+            PreviousLockDriveTime: previousLockDriveTime,
+            DoorOpen: TryReadDoorOpen());
+    }
+
+    private int? TryGetDeviceInfo(
+        int info,
+        string label,
+        ICollection<string> errors)
+    {
+        try
+        {
+            var value = 0;
+            if (_sdk.GetDeviceInfo(MachineNumber, info, out value))
+            {
+                return value;
+            }
+
+            errors.Add(
+                $"GetDeviceInfo({info}:{label}) failed with vendor error {GetLastError()}.");
+        }
+        catch (Exception ex)
+        {
+            errors.Add($"GetDeviceInfo({info}:{label}) is unavailable: {ex.Message}");
+        }
+
+        return null;
+    }
+
+    private int GetRequiredDeviceInfo(int info, string label)
+    {
+        var errors = new List<string>();
+        var value = TryGetDeviceInfo(info, label, errors);
+        if (value.HasValue)
+        {
+            return value.Value;
+        }
+
+        throw new DeviceOperationException(string.Join(" ", errors));
+    }
+
+    private bool? TryReadDoorOpen()
+    {
+        try
+        {
+            var state = 0;
+            return _sdk.GetDoorState(MachineNumber, out state)
+                ? state == 1
+                : null;
+        }
+        catch
+        {
+            return null;
+        }
     }
 }

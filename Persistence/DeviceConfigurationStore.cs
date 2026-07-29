@@ -1,71 +1,17 @@
-using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Data.Sqlite;
+using System.Runtime.InteropServices;
 
 namespace ZktecoRelay.Persistence;
 
 public sealed class DeviceConfigurationStore
 {
-    private readonly string _connectionString;
+    private readonly RelayDatabase _database;
     private readonly object _sync = new();
 
-    public DeviceConfigurationStore()
+    public DeviceConfigurationStore(RelayDatabase database)
     {
-        var configuredPath = Environment.GetEnvironmentVariable("ZKTECO_DATABASE_PATH");
-        string databasePath;
-
-        if (!string.IsNullOrWhiteSpace(configuredPath))
-        {
-            databasePath = Path.GetFullPath(Environment.ExpandEnvironmentVariables(configuredPath));
-        }
-        else
-        {
-            var baseDataDir = Path.Combine(AppContext.BaseDirectory, "data");
-            if (IsDirectoryWritable(baseDataDir))
-            {
-                databasePath = Path.Combine(baseDataDir, "zkteco-relay.db");
-            }
-            else
-            {
-                var appDataDataDir = Path.Combine(
-                    Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-                    "ZktecoRelay",
-                    "data");
-                databasePath = Path.Combine(appDataDataDir, "zkteco-relay.db");
-            }
-        }
-
-        Directory.CreateDirectory(Path.GetDirectoryName(databasePath)!);
-        _connectionString = new SqliteConnectionStringBuilder
-        {
-            DataSource = databasePath,
-            Mode = SqliteOpenMode.ReadWriteCreate,
-            Cache = SqliteCacheMode.Shared
-        }.ToString();
-
-        Initialize();
-    }
-
-    private static bool IsDirectoryWritable(string directoryPath)
-    {
-        try
-        {
-            if (!Directory.Exists(directoryPath))
-            {
-                Directory.CreateDirectory(directoryPath);
-            }
-
-            var testFile = Path.Combine(directoryPath, $".perm_test_{Guid.NewGuid():N}.tmp");
-            using (var stream = File.Create(testFile, 1, FileOptions.DeleteOnClose))
-            {
-            }
-
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
+        _database = database;
     }
 
     public IReadOnlyList<DeviceConfigurationView> GetViews()
@@ -200,33 +146,7 @@ public sealed class DeviceConfigurationStore
         }
     }
 
-    private void Initialize()
-    {
-        lock (_sync)
-        {
-            using var connection = Open();
-            using var command = connection.CreateCommand();
-            command.CommandText = """
-                PRAGMA journal_mode = WAL;
-                CREATE TABLE IF NOT EXISTS device_configurations (
-                    device_id TEXT PRIMARY KEY COLLATE NOCASE,
-                    ip_address TEXT NOT NULL,
-                    port INTEGER NOT NULL,
-                    communication_password BLOB NOT NULL,
-                    auto_connect INTEGER NOT NULL DEFAULT 1,
-                    updated_at TEXT NOT NULL
-                );
-                """;
-            command.ExecuteNonQuery();
-        }
-    }
-
-    private SqliteConnection Open()
-    {
-        var connection = new SqliteConnection(_connectionString);
-        connection.Open();
-        return connection;
-    }
+    private SqliteConnection Open() => _database.Open();
 
     private static DeviceConfiguration ReadConfiguration(SqliteDataReader reader)
     {

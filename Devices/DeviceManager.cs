@@ -11,11 +11,16 @@ public sealed class DeviceManager : IDisposable
     private readonly ConcurrentDictionary<string, DeviceSession> _sessions = new(StringComparer.OrdinalIgnoreCase);
     private readonly DeviceConfigurationStore _configurationStore;
     private readonly RealtimeEventHub _eventHub;
+    private readonly IZktecoComClientFactory _clientFactory;
 
-    public DeviceManager(DeviceConfigurationStore configurationStore, RealtimeEventHub eventHub)
+    public DeviceManager(
+        DeviceConfigurationStore configurationStore,
+        RealtimeEventHub eventHub,
+        IZktecoComClientFactory clientFactory)
     {
         _configurationStore = configurationStore;
         _eventHub = eventHub;
+        _clientFactory = clientFactory;
     }
 
     public IReadOnlyCollection<DeviceStatus> GetStatuses() =>
@@ -66,7 +71,12 @@ public sealed class DeviceManager : IDisposable
 
         var session = _sessions.GetOrAdd(
             deviceId,
-            _ => new DeviceSession(deviceId, request.IpAddress, request.Port, _eventHub));
+            _ => new DeviceSession(
+                deviceId,
+                request.IpAddress,
+                request.Port,
+                _eventHub,
+                _clientFactory));
 
         return await session.ConnectAsync(request.CommunicationPassword ?? string.Empty, cancellationToken);
     }
@@ -161,7 +171,12 @@ public sealed class DeviceManager : IDisposable
     public Task<OperationResult> SetFaceAsync(string deviceId, string enrollNumber, FaceTemplateRequest request, CancellationToken ct) => GetRequiredSession(deviceId).SetFaceAsync(enrollNumber, request, ct);
     public Task<OperationResult> DeleteFaceAsync(string deviceId, string enrollNumber, int faceIndex, CancellationToken ct) => GetRequiredSession(deviceId).DeleteFaceAsync(enrollNumber, faceIndex, ct);
     public Task<OperationResult> UploadUserPhotoAsync(string deviceId, string enrollNumber, UserPhotoRequest request, CancellationToken ct) => GetRequiredSession(deviceId).UploadUserPhotoAsync(enrollNumber, request, ct);
+    public Task<UserPhotoResult> DownloadUserPhotoAsync(string deviceId, string enrollNumber, CancellationToken ct) => GetRequiredSession(deviceId).DownloadUserPhotoAsync(enrollNumber, ct);
     public Task<OperationResult> UnlockDoorAsync(string deviceId, DoorUnlockRequest request, CancellationToken ct) => GetRequiredSession(deviceId).UnlockDoorAsync(request, ct);
+    public Task<DeviceCapabilities> GetCapabilitiesAsync(string deviceId, CancellationToken ct) => GetRequiredSession(deviceId).GetCapabilitiesAsync(ct);
+    public Task<DoorStateResult> GetDoorStateAsync(string deviceId, CancellationToken ct) => GetRequiredSession(deviceId).GetDoorStateAsync(ct);
+    public Task<DoorModeResult> StartNormallyOpenAsync(string deviceId, CancellationToken ct) => GetRequiredSession(deviceId).StartNormallyOpenAsync(ct);
+    public Task<DoorModeResult> EndNormallyOpenAsync(string deviceId, EndNormallyOpenRequest request, CancellationToken ct) => GetRequiredSession(deviceId).EndNormallyOpenAsync(request, ct);
     public Task<TimeZoneInfoResult> GetTimeZoneAsync(string deviceId, int index, CancellationToken ct) => GetRequiredSession(deviceId).GetTimeZoneAsync(index, ct);
     public Task<OperationResult> SetTimeZoneAsync(string deviceId, TimeZoneRequest request, CancellationToken ct) => GetRequiredSession(deviceId).SetTimeZoneAsync(request, ct);
     public Task<AccessGroupInfo> GetAccessGroupAsync(string deviceId, int group, CancellationToken ct) => GetRequiredSession(deviceId).GetAccessGroupAsync(group, ct);
@@ -170,6 +185,38 @@ public sealed class DeviceManager : IDisposable
     public Task<OperationResult> SetUserAccessAsync(string deviceId, string enrollNumber, UserAccessRequest request, CancellationToken ct) => GetRequiredSession(deviceId).SetUserAccessAsync(enrollNumber, request, ct);
     public Task<UnlockCombinationInfo> GetUnlockCombinationAsync(string deviceId, int number, CancellationToken ct) => GetRequiredSession(deviceId).GetUnlockCombinationAsync(number, ct);
     public Task<OperationResult> SetUnlockCombinationAsync(string deviceId, UnlockCombinationRequest request, CancellationToken ct) => GetRequiredSession(deviceId).SetUnlockCombinationAsync(request, ct);
+
+    public void UpdateReconnectState(
+        string deviceId,
+        int? attempt,
+        DateTimeOffset? nextReconnectAt)
+    {
+        if (_sessions.TryGetValue(deviceId, out var session))
+        {
+            session.UpdateReconnectState(attempt, nextReconnectAt);
+        }
+    }
+
+    public async Task<bool> AreSessionWorkersResponsiveAsync(
+        TimeSpan timeout,
+        CancellationToken cancellationToken)
+    {
+        foreach (var session in _sessions.Values)
+        {
+            try
+            {
+                await session
+                    .PingWorkerAsync(cancellationToken)
+                    .WaitAsync(timeout, cancellationToken);
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
 
     private DeviceSession GetRequiredSession(string deviceId)
     {

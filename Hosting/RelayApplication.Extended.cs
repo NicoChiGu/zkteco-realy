@@ -40,8 +40,23 @@ public static partial class RelayApplication
         app.MapPut("/api/v1/devices/{deviceId}/users/{enrollNumber}/photo", (string deviceId, string enrollNumber, UserPhotoRequest request, DeviceManager manager, CancellationToken ct) =>
             ExecuteOperation(() => manager.UploadUserPhotoAsync(deviceId, enrollNumber, request, ct)));
 
+        app.MapGet("/api/v1/devices/{deviceId}/users/{enrollNumber}/photo", (string deviceId, string enrollNumber, DeviceManager manager, CancellationToken ct) =>
+            Execute(() => manager.DownloadUserPhotoAsync(deviceId, enrollNumber, ct)));
+
+        app.MapGet("/api/v1/devices/{deviceId}/capabilities", (string deviceId, DeviceManager manager, CancellationToken ct) =>
+            Execute(() => manager.GetCapabilitiesAsync(deviceId, ct)));
+
+        app.MapGet("/api/v1/devices/{deviceId}/access/door-state", (string deviceId, DeviceManager manager, CancellationToken ct) =>
+            Execute(() => manager.GetDoorStateAsync(deviceId, ct)));
+
         app.MapPost("/api/v1/devices/{deviceId}/access/unlock", (string deviceId, DoorUnlockRequest request, DeviceManager manager, CancellationToken ct) =>
             ExecuteOperation(() => manager.UnlockDoorAsync(deviceId, request, ct)));
+
+        app.MapPost("/api/v1/devices/{deviceId}/access/normally-open/start", (string deviceId, DeviceManager manager, CancellationToken ct) =>
+            Execute(() => manager.StartNormallyOpenAsync(deviceId, ct)));
+
+        app.MapPost("/api/v1/devices/{deviceId}/access/normally-open/end", (string deviceId, EndNormallyOpenRequest request, DeviceManager manager, CancellationToken ct) =>
+            Execute(() => manager.EndNormallyOpenAsync(deviceId, request, ct)));
 
         app.MapGet("/api/v1/devices/{deviceId}/access/time-zones/{index:int}", (string deviceId, int index, DeviceManager manager, CancellationToken ct) =>
             Execute(() => manager.GetTimeZoneAsync(deviceId, index, ct)));
@@ -82,9 +97,29 @@ public static partial class RelayApplication
         {
             return Results.BadRequest(new ApiError("invalid_request", ex.Message));
         }
+        catch (DeviceUnavailableException ex)
+        {
+            return Results.Json(
+                new ApiError("device_unavailable", ex.Message, ex.VendorErrorCode),
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (CapabilityNotSupportedException ex)
+        {
+            return Results.Json(
+                new ApiError("capability_not_supported", ex.Message),
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+        catch (DeviceOperationException ex)
+        {
+            return Results.Json(
+                new ApiError("device_operation_failed", ex.Message, ex.VendorErrorCode),
+                statusCode: StatusCodes.Status502BadGateway);
+        }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new ApiError("device_operation_failed", ex.Message));
+            return Results.Json(
+                new ApiError("device_operation_failed", ex.Message),
+                statusCode: StatusCodes.Status502BadGateway);
         }
         catch (FormatException ex)
         {
@@ -97,7 +132,14 @@ public static partial class RelayApplication
         try
         {
             var result = await operation();
-            return result.Success ? Results.Ok(result) : Results.BadRequest(result);
+            return result.Success
+                ? Results.Ok(result)
+                : Results.Json(
+                    new ApiError(
+                        "device_operation_failed",
+                        result.Message ?? "The vendor operation failed.",
+                        result.VendorErrorCode),
+                    statusCode: StatusCodes.Status502BadGateway);
         }
         catch (KeyNotFoundException ex)
         {
@@ -107,9 +149,29 @@ public static partial class RelayApplication
         {
             return Results.BadRequest(new ApiError("invalid_request", ex.Message));
         }
+        catch (DeviceUnavailableException ex)
+        {
+            return Results.Json(
+                new ApiError("device_unavailable", ex.Message, ex.VendorErrorCode),
+                statusCode: StatusCodes.Status409Conflict);
+        }
+        catch (CapabilityNotSupportedException ex)
+        {
+            return Results.Json(
+                new ApiError("capability_not_supported", ex.Message),
+                statusCode: StatusCodes.Status422UnprocessableEntity);
+        }
+        catch (DeviceOperationException ex)
+        {
+            return Results.Json(
+                new ApiError("device_operation_failed", ex.Message, ex.VendorErrorCode),
+                statusCode: StatusCodes.Status502BadGateway);
+        }
         catch (InvalidOperationException ex)
         {
-            return Results.Conflict(new ApiError("device_operation_failed", ex.Message));
+            return Results.Json(
+                new ApiError("device_operation_failed", ex.Message),
+                statusCode: StatusCodes.Status502BadGateway);
         }
         catch (FormatException ex)
         {

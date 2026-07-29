@@ -71,6 +71,7 @@ internal sealed partial class ZktecoComClient
     public OperationResult UpsertUser(string enrollNumber, UpsertUserRequest request)
     {
         ThrowIfDisposed();
+        ValidateWritableEnrollNumber(enrollNumber);
         var password = request.Password;
         var cardNumber = request.CardNumber;
 
@@ -113,6 +114,7 @@ internal sealed partial class ZktecoComClient
     public OperationResult DeleteUser(string enrollNumber)
     {
         ThrowIfDisposed();
+        ValidateWritableEnrollNumber(enrollNumber);
         var ok = _sdk.SSR_DeleteEnrollDataExt(MachineNumber, enrollNumber, 12);
         if (!ok)
         {
@@ -123,12 +125,30 @@ internal sealed partial class ZktecoComClient
         return new OperationResult(true);
     }
 
-    private InvalidOperationException VendorFailure(string operation) =>
-        new($"{operation} failed. Vendor error: {GetLastError()}.");
+    private DeviceOperationException VendorFailure(string operation)
+    {
+        var vendorErrorCode = GetLastError();
+        return new DeviceOperationException(
+            $"{operation} failed. Vendor error: {vendorErrorCode}.",
+            vendorErrorCode);
+    }
 
     private OperationResult Failure(string operation)
     {
         var code = GetLastError();
         return new OperationResult(false, code, $"{operation} failed.");
+    }
+
+    private static void ValidateWritableEnrollNumber(string enrollNumber)
+    {
+        if (string.IsNullOrWhiteSpace(enrollNumber) ||
+            enrollNumber.Length > 64 ||
+            enrollNumber.Any(character =>
+                !char.IsAsciiLetterOrDigit(character) &&
+                character is not '-' and not '_'))
+        {
+            throw new ArgumentException(
+                "enrollNumber must match [A-Za-z0-9_-]+ and must not exceed 64 characters.");
+        }
     }
 }

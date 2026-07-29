@@ -5,45 +5,90 @@ namespace ZktecoRelay.Realtime;
 
 public sealed class RealtimeEventHub
 {
-    private readonly ConcurrentDictionary<Guid, Channel<RealtimeEvent>> _subscribers = new();
+    private readonly ConcurrentDictionary<Guid, Channel<bool>> _subscribers = new();
+    private readonly RealtimeEventStore _store;
 
-    public RealtimeSubscription Subscribe()
+    public RealtimeEventHub(RealtimeEventStore store)
+    {
+        _store = store;
+    }
+
+    public RealtimeSubscription Subscribe(long afterSequence = 0)
     {
         var id = Guid.NewGuid();
-        var channel = Channel.CreateBounded<RealtimeEvent>(new BoundedChannelOptions(512)
+        var channel = Channel.CreateBounded<bool>(new BoundedChannelOptions(1)
         {
-            FullMode = BoundedChannelFullMode.DropOldest,
+            FullMode = BoundedChannelFullMode.DropWrite,
             SingleReader = true,
             SingleWriter = false
         });
 
         _subscribers[id] = channel;
-        return new RealtimeSubscription(id, channel.Reader, () => _subscribers.TryRemove(id, out _));
+        return new RealtimeSubscription(
+            id,
+            afterSequence,
+            _store,
+            channel.Reader,
+            () => _subscribers.TryRemove(id, out _));
     }
 
     public void Publish(RealtimeEvent realtimeEvent)
     {
+        _store.Append(realtimeEvent);
         foreach (var subscriber in _subscribers.Values)
         {
-            subscriber.Writer.TryWrite(realtimeEvent);
+            subscriber.Writer.TryWrite(true);
         }
     }
+
+    public (long? Earliest, long? Latest) GetSequenceRange() =>
+        _store.GetSequenceRange();
 }
 
 public sealed class RealtimeSubscription : IDisposable
 {
+    private readonly RealtimeEventStore _store;
+    private readonly ChannelReader<bool> _notifications;
     private readonly Action _unsubscribe;
+    private long _cursor;
     private int _disposed;
 
-    internal RealtimeSubscription(Guid id, ChannelReader<RealtimeEvent> reader, Action unsubscribe)
+    internal RealtimeSubscription(
+        Guid id,
+        long afterSequence,
+        RealtimeEventStore store,
+        ChannelReader<bool> notifications,
+        Action unsubscribe)
     {
         Id = id;
-        Reader = reader;
+        _cursor = afterSequence;
+        _store = store;
+        _notifications = notifications;
         _unsubscribe = unsubscribe;
     }
 
     public Guid Id { get; }
-    public ChannelReader<RealtimeEvent> Reader { get; }
+    public long Cursor => Interlocked.Read(ref _cursor);
+
+    public IReadOnlyList<RealtimeEvent> ReadNextBatch(int limit = 200)
+    {
+        var result = _store.ReadAfter(Cursor, limit);
+        if (result.Count > 0 &&
+            long.TryParse(result[^1].EventSequence, out var sequence))
+        {
+            Interlocked.Exchange(ref _cursor, sequence);
+        }
+
+        return result;
+    }
+
+    public async Task WaitForEventsAsync(CancellationToken cancellationToken)
+    {
+        await _notifications.ReadAsync(cancellationToken);
+        while (_notifications.TryRead(out _))
+        {
+        }
+    }
 
     public void Dispose()
     {

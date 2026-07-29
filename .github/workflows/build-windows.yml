@@ -22,9 +22,11 @@ jobs:
           - runtime: win-x64
             platform: x64
             sdk_script: install-sdk-x64.ps1
+            test_dotnet: dotnet
           - runtime: win-x86
             platform: x86
             sdk_script: install-sdk-x86.ps1
+            test_dotnet: .\.dotnet-x86\dotnet.exe
 
     steps:
       - name: Checkout
@@ -34,6 +36,13 @@ jobs:
         uses: actions/setup-dotnet@v4
         with:
           dotnet-version: 8.0.x
+
+      - name: Setup x86 .NET test runtime
+        if: matrix.platform == 'x86'
+        shell: pwsh
+        run: |
+          Invoke-WebRequest https://dot.net/v1/dotnet-install.ps1 -OutFile .\dotnet-install.ps1
+          .\dotnet-install.ps1 -Channel 8.0 -Architecture x86 -InstallDir .\.dotnet-x86 -NoPath
 
       - name: Resolve application version
         shell: pwsh
@@ -57,6 +66,22 @@ jobs:
 
       - name: Restore manager
         run: dotnet restore .\Manager\ZktecoRelay.Manager.csproj -r ${{ matrix.runtime }}
+
+      - name: Restore tests
+        shell: pwsh
+        run: |
+          & "${{ matrix.test_dotnet }}" restore `
+            .\tests\ZktecoRelay.Tests\ZktecoRelay.Tests.csproj `
+            -p:PlatformTarget=${{ matrix.platform }}
+
+      - name: Test Relay
+        shell: pwsh
+        run: |
+          & "${{ matrix.test_dotnet }}" test `
+            .\tests\ZktecoRelay.Tests\ZktecoRelay.Tests.csproj `
+            -c Release `
+            --no-restore `
+            -p:PlatformTarget=${{ matrix.platform }}
 
       - name: Publish API executable
         shell: pwsh
@@ -113,6 +138,14 @@ jobs:
           $manager = ".\artifacts\${{ matrix.runtime }}\manager\ZktecoRelay.Manager.exe"
           if (-not (Test-Path $api)) { throw "API executable was not produced: $api" }
           if (-not (Test-Path $manager)) { throw "Manager executable was not produced: $manager" }
+          $apiVersion = (Get-Item $api).VersionInfo.FileVersion
+          $managerVersion = (Get-Item $manager).VersionInfo.FileVersion
+          if (-not $apiVersion.StartsWith($env:APP_VERSION)) {
+            throw "API file version '$apiVersion' does not match '$env:APP_VERSION'."
+          }
+          if (-not $managerVersion.StartsWith($env:APP_VERSION)) {
+            throw "Manager file version '$managerVersion' does not match '$env:APP_VERSION'."
+          }
           Get-Item $api, $manager | Select-Object FullName, Length
 
       - name: Install Inno Setup

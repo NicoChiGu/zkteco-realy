@@ -22,13 +22,41 @@ public static partial class RelayApplication
                 });
             }
 
+            var afterSequenceText =
+                context.Request.Query["afterSequence"].ToString();
+            if (!string.IsNullOrWhiteSpace(afterSequenceText) &&
+                (!long.TryParse(afterSequenceText, out var parsedSequence) ||
+                 parsedSequence < 0))
+            {
+                return Results.BadRequest(new
+                {
+                    code = "invalid_after_sequence",
+                    message =
+                        "afterSequence must be a non-negative decimal integer."
+                });
+            }
+
+            var requestedSequence =
+                string.IsNullOrWhiteSpace(afterSequenceText)
+                    ? 0L
+                    : long.Parse(afterSequenceText);
             var deviceFilter = context.Request.Query["deviceId"].ToString();
             var eventTypes = context.Request.Query["eventType"]
                 .SelectMany(value => value?.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries) ?? [])
                 .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
+            var (earliestSequence, _) = eventHub.GetSequenceRange();
+            var replayStartsAt = requestedSequence;
+            var hasReplayGap =
+                earliestSequence.HasValue &&
+                requestedSequence < earliestSequence.Value - 1;
+            if (hasReplayGap)
+            {
+                replayStartsAt = earliestSequence!.Value - 1;
+            }
+
             using var socket = await context.WebSockets.AcceptWebSocketAsync();
-            using var subscription = eventHub.Subscribe();
+            using var subscription = eventHub.Subscribe(replayStartsAt);
 
             await SendWebSocketJsonAsync(socket, new
             {
@@ -39,34 +67,75 @@ public static partial class RelayApplication
                 data = new
                 {
                     subscriptionId = subscription.Id,
-                    filteredEventTypes = eventTypes.OrderBy(value => value).ToArray()
+                    filteredEventTypes = eventTypes.OrderBy(value => value).ToArray(),
+                    afterSequence = requestedSequence.ToString()
                 }
             }, cancellationToken);
+
+            if (hasReplayGap)
+            {
+                await SendWebSocketJsonAsync(socket, new
+                {
+                    eventId = Guid.NewGuid().ToString("N"),
+                    deviceId =
+                        string.IsNullOrWhiteSpace(deviceFilter)
+                            ? null
+                            : deviceFilter,
+                    eventType = "event_replay_gap",
+                    occurredAt = DateTimeOffset.UtcNow,
+                    data = new
+                    {
+                        requestedAfterSequence =
+                            requestedSequence.ToString(),
+                        earliestAvailableSequence =
+                            earliestSequence!.Value.ToString()
+                    }
+                }, cancellationToken);
+            }
 
             using var connectionCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
             var receiveTask = WaitForWebSocketCloseAsync(socket, connectionCts);
 
             try
             {
-                await foreach (var realtimeEvent in subscription.Reader.ReadAllAsync(connectionCts.Token))
+                while (!connectionCts.IsCancellationRequested &&
+                       socket.State == WebSocketState.Open)
                 {
-                    if (!string.IsNullOrWhiteSpace(deviceFilter) &&
-                        !string.Equals(deviceFilter, realtimeEvent.DeviceId, StringComparison.OrdinalIgnoreCase))
+                    var batch = subscription.ReadNextBatch();
+                    if (batch.Count == 0)
                     {
+                        await subscription.WaitForEventsAsync(
+                            connectionCts.Token);
                         continue;
                     }
 
-                    if (eventTypes.Count > 0 && !eventTypes.Contains(realtimeEvent.EventType))
+                    foreach (var realtimeEvent in batch)
                     {
-                        continue;
-                    }
+                        if (!string.IsNullOrWhiteSpace(deviceFilter) &&
+                            !string.Equals(
+                                deviceFilter,
+                                realtimeEvent.DeviceId,
+                                StringComparison.OrdinalIgnoreCase))
+                        {
+                            continue;
+                        }
 
-                    if (socket.State != WebSocketState.Open)
-                    {
-                        break;
-                    }
+                        if (eventTypes.Count > 0 &&
+                            !eventTypes.Contains(realtimeEvent.EventType))
+                        {
+                            continue;
+                        }
 
-                    await SendWebSocketJsonAsync(socket, realtimeEvent, connectionCts.Token);
+                        if (socket.State != WebSocketState.Open)
+                        {
+                            break;
+                        }
+
+                        await SendWebSocketJsonAsync(
+                            socket,
+                            realtimeEvent,
+                            connectionCts.Token);
+                    }
                 }
             }
             catch (OperationCanceledException) when (connectionCts.IsCancellationRequested)

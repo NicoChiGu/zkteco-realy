@@ -6,6 +6,7 @@ using ZktecoRelay.Devices;
 using ZktecoRelay.Models;
 using ZktecoRelay.Realtime;
 using ZktecoRelay.Persistence;
+using ZktecoRelay.Diagnostics;
 
 namespace ZktecoRelay.Hosting;
 
@@ -22,11 +23,14 @@ public static partial class RelayApplication
         DotEnv.AutoLoad();
 
         var builder = WebApplication.CreateBuilder(args);
+        builder.Services.AddSingleton<RelayDatabase>();
         builder.Services.AddSingleton<DeviceConfigurationStore>();
+        builder.Services.AddSingleton<RealtimeEventStore>();
         builder.Services.AddSingleton<RealtimeEventHub>();
+        builder.Services.AddSingleton<IZktecoComClientFactory, ZktecoComClientFactory>();
         builder.Services.AddSingleton<DeviceManager>();
+        builder.Services.AddSingleton<RelayHealthService>();
         builder.Services.AddHostedService<DeviceAutoConnectService>();
-        builder.Services.AddHealthChecks();
 
         var bindUrl = overrides?.BindUrl
             ?? Environment.GetEnvironmentVariable("ZKTECO_BIND_URL")
@@ -56,7 +60,11 @@ public static partial class RelayApplication
 
             try
             {
-                if (!ipAccessPolicy.IsAllowed(remoteAddress))
+                var testServerRequest =
+                    remoteAddress is null &&
+                    app.Environment.IsEnvironment("Testing");
+                if (!testServerRequest &&
+                    !ipAccessPolicy.IsAllowed(remoteAddress))
                 {
                     context.Response.StatusCode = StatusCodes.Status403Forbidden;
                     await context.Response.WriteAsJsonAsync(new ApiError("ip_not_allowed", "The remote IP address is not allowed."));
@@ -118,8 +126,9 @@ public static partial class RelayApplication
             KeepAliveInterval = TimeSpan.FromSeconds(30)
         });
 
-        app.MapHealthChecks("/health");
+        MapHealthEndpoints(app);
         MapDocumentationEndpoints(app);
+        MapProtocolEndpoints(app);
         MapDeviceEndpoints(app);
         MapAttendanceEndpoints(app);
         MapDeviceConfigurationEndpoints(app);
@@ -149,11 +158,24 @@ public static partial class RelayApplication
             try
             {
                 var result = await manager.ConnectAsync(deviceId, request, cancellationToken);
-                return result.Connected ? Results.Ok(result) : Results.BadRequest(result);
+                return result.Connected
+                    ? Results.Ok(result)
+                    : Results.Json(
+                        new ApiError(
+                            "device_unavailable",
+                            result.Error ?? "The device connection failed.",
+                            result.VendorErrorCode),
+                        statusCode: StatusCodes.Status409Conflict);
             }
             catch (ArgumentException ex)
             {
                 return Results.BadRequest(new ApiError("invalid_request", ex.Message));
+            }
+            catch (InvalidOperationException ex)
+            {
+                return Results.Json(
+                    new ApiError("device_operation_failed", ex.Message),
+                    statusCode: StatusCodes.Status502BadGateway);
             }
         });
 
@@ -181,9 +203,23 @@ public static partial class RelayApplication
             {
                 return Results.NotFound(new ApiError("device_not_found", ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (DeviceUnavailableException ex)
             {
-                return Results.Conflict(new ApiError("device_unavailable", ex.Message));
+                return Results.Json(
+                    new ApiError(
+                        "device_unavailable",
+                        ex.Message,
+                        ex.VendorErrorCode),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (DeviceOperationException ex)
+            {
+                return Results.Json(
+                    new ApiError(
+                        "device_operation_failed",
+                        ex.Message,
+                        ex.VendorErrorCode),
+                    statusCode: StatusCodes.Status502BadGateway);
             }
         });
 
@@ -201,9 +237,23 @@ public static partial class RelayApplication
             {
                 return Results.NotFound(new ApiError("device_not_found", ex.Message));
             }
-            catch (InvalidOperationException ex)
+            catch (DeviceUnavailableException ex)
             {
-                return Results.Conflict(new ApiError("device_unavailable", ex.Message));
+                return Results.Json(
+                    new ApiError(
+                        "device_unavailable",
+                        ex.Message,
+                        ex.VendorErrorCode),
+                    statusCode: StatusCodes.Status409Conflict);
+            }
+            catch (DeviceOperationException ex)
+            {
+                return Results.Json(
+                    new ApiError(
+                        "device_operation_failed",
+                        ex.Message,
+                        ex.VendorErrorCode),
+                    statusCode: StatusCodes.Status502BadGateway);
             }
         });
     }

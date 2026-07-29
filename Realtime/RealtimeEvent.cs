@@ -5,4 +5,5 @@ public sealed record RealtimeEvent(
     string DeviceId,
     string EventType,
     DateTimeOffset OccurredAt,
-    IReadOnlyDictionary<string, object?> Data);
+    IReadOnlyDictionary<string, object?> Data,
+    string? EventSequence = null);

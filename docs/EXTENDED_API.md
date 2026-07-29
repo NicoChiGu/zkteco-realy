@@ -25,6 +25,10 @@ DELETE /api/v1/devices/{deviceId}/users/{enrollNumber}
 
 `password` 与 `cardNumber` 省略或传 `null` 时，更新已有人员会尽量保留设备上的原值。查询人员时不会返回密码明文，只返回 `hasPassword`。
 
+所有后续设备写入和照片文件名统一要求 `enrollNumber` 匹配
+`[A-Za-z0-9_-]+`，并继续受设备 `pinWidth` 和字母编号能力约束。升级不会自动
+改写已有人员；不合规编号应由上层提示并等待人工重新映射。
+
 成功响应：
 
 ```json
@@ -88,6 +92,7 @@ DELETE /api/v1/devices/{deviceId}/users/{enrollNumber}/face?faceIndex=50
 
 ```http
 PUT /api/v1/devices/{deviceId}/users/{enrollNumber}/photo
+GET /api/v1/devices/{deviceId}/users/{enrollNumber}/photo
 ```
 
 普通人员照片：
@@ -109,6 +114,86 @@ PUT /api/v1/devices/{deviceId}/users/{enrollNumber}/photo
 ```
 
 服务会临时生成 `{工号}.jpg` 或 `verify_biophoto_9_{工号}.jpg`，调用 SDK 后删除临时文件。
+
+下载接口调用厂商 `DownloadUserPhoto`，返回设备中的原始 JPG 文件，不是
+`GetUserFaceStr` 返回的加密/算法人脸模板：
+
+```json
+{
+  "enrollNumber": "10001",
+  "fileName": "10001.jpg",
+  "base64Jpeg": "/9j/4AAQSkZJRgABAQ...",
+  "byteLength": 18342
+}
+```
+
+Relay 校验文件名、10 MB 大小上限和 JPG 文件头，并使用每次请求独立的临时目录；
+响应完成后不在 Relay 本地保留照片。该 SDK 能力仅适用于支持新架构用户照片的固件。
+
+## 设备能力探测
+
+```http
+GET /api/v1/devices/{deviceId}/capabilities
+```
+
+```json
+{
+  "pinWidth": 9,
+  "supportsAlphabeticPin": false,
+  "accessControlFunction": 14,
+  "supportsAdvancedAccess": true,
+  "supportsNormallyOpen": true,
+  "supportsDoorState": true,
+  "supportsUserPhotoDownload": true,
+  "supportsAttendanceRangeQuery": true,
+  "probeErrors": []
+}
+```
+
+探测使用 SDK 文档中的 `GetDeviceInfo(76)`（PIN2Width）、
+`GetDeviceInfo(77)`（IsSupportABCPin）、`GetACFun`、`GetDoorState` 和
+`IsNewFirmwareMachine`。照片探测方法不可用时
+`supportsUserPhotoDownload=null`，原因写入 `probeErrors`，不会固定报告支持。
+单项探测失败会进入 `probeErrors`，调用方不得把未知能力当作已支持。
+
+## 门状态与常开
+
+```http
+GET  /api/v1/devices/{deviceId}/access/door-state
+POST /api/v1/devices/{deviceId}/access/normally-open/start
+POST /api/v1/devices/{deviceId}/access/normally-open/end
+```
+
+门状态响应：
+
+```json
+{
+  "open": false,
+  "rawState": 0
+}
+```
+
+开始常开仅允许 `GetACFun=14` 的设备。Relay 读取 `GetDeviceInfo(5)` 的原锁驱动
+时长后将其设为 `255`，并把原值返回给上层保存：
+
+```json
+{
+  "normallyOpen": true,
+  "lockDriveTime": 255,
+  "previousLockDriveTime": 5,
+  "doorOpen": true
+}
+```
+
+结束常开必须显式传入上层在开始常开时保存的原值，避免 Relay 重启后猜测设备配置：
+
+```json
+{
+  "restoreLockDriveTime": 5
+}
+```
+
+允许恢复范围为 `0-254`。成功响应与开始常开相同，但 `normallyOpen=false`。
 
 ## 远程开门
 
@@ -215,21 +300,22 @@ PUT /api/v1/devices/{deviceId}/access/unlock-combinations/{number}
 
 ## 错误响应
 
-设备未连接：
+设备未连接返回 `409 device_unavailable`：
 
 ```json
 {
-  "code": "device_operation_failed",
+  "code": "device_unavailable",
   "message": "Device 'office-gate-01' is not connected.",
   "vendorErrorCode": null
 }
 ```
 
-厂商 SDK 返回失败：
+能力不支持返回 `422 capability_not_supported`。厂商 SDK 操作失败返回
+`502 device_operation_failed`：
 
 ```json
 {
-  "success": false,
+  "code": "device_operation_failed",
   "vendorErrorCode": -1,
   "message": "SSR_SetUserInfo failed."
 }

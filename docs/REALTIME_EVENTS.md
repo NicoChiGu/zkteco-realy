@@ -45,12 +45,33 @@ ws://127.0.0.1:5080/api/v1/events/ws?apiKey=your-secret-key
 ```json
 {
   "eventId": "da3cf34e4cbc40dfbec576a628052fb6",
+  "eventSequence": "1025",
   "deviceId": "front-door",
   "eventType": "attendance",
   "occurredAt": "2026-07-16T10:22:31.125Z",
   "data": {}
 }
 ```
+
+`eventSequence` 是 SQLite 中单调递增的 64 位整数，并始终以十进制字符串传输，
+避免 JavaScript `number` 精度丢失。`websocket_connected` 和
+`event_replay_gap` 是连接控制消息，不带序号。
+
+## 断点续传
+
+客户端只应在事件及其业务副作用已在同一事务中提交后保存检查点。重连时传入：
+
+```text
+/api/v1/events/ws?afterSequence=1025
+```
+
+Relay 会从 SQLite 顺序补发 `1025` 之后的事件，再继续推送实时事件。即使客户端
+消费速度较慢，也会继续从事件库分批读取，不依赖会丢旧数据的内存消息队列。
+
+事件默认保留 30 天且最多 100,000 条；达到任一上限时删除最旧记录。如果
+`afterSequence` 早于最早可用事件，Relay 先发送 `event_replay_gap`，其中包含
+请求序号和最早可用序号，随后从最早记录继续。调用方必须记录运维告警；可通过
+批量读取补账的考勤不应与门状态、报警等不可恢复缺口混为一谈。
 
 ## 考勤事件
 
@@ -92,6 +113,8 @@ ws://127.0.0.1:5080/api/v1/events/ws?apiKey=your-secret-key
 - `template_deleted`
 - `finger_enrolled`
 - `attendance`
+- `device_status_changed`
+- `event_replay_gap`
 
 不同设备型号和固件可能只支持其中一部分事件。实时事件注册失败不会阻止设备的普通 REST API 连接。
 
@@ -102,6 +125,7 @@ const url = new URL("ws://127.0.0.1:5080/api/v1/events/ws");
 url.searchParams.set("apiKey", "your-secret-key");
 url.searchParams.set("deviceId", "front-door");
 url.searchParams.set("eventType", "attendance,door,alarm");
+url.searchParams.set("afterSequence", localStorage.getItem("relaySequence") ?? "0");
 
 const socket = new WebSocket(url);
 socket.onmessage = event => {
@@ -125,8 +149,7 @@ const socket = new WebSocket(
 );
 
 socket.on("message", payload => {
-  console.log(JSON.parse(payload.toString()));
+  const event = JSON.parse(payload.toString());
+  console.log(event.eventSequence, event.eventType);
 });
 ```
-
-每个 WebSocket 客户端使用独立的有界缓冲区。客户端消费过慢时会丢弃最旧事件，避免慢客户端拖垮设备线程；业务系统应及时消费并自行持久化关键事件。

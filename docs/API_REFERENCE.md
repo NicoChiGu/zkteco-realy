@@ -16,7 +16,11 @@ Swagger UI 从 jsDelivr 加载前端资源；在完全离线的环境中仍可�
 
 | 方法 | 路径 | 用途 | 详细文档 |
 |---|---|---|---|
-| `GET` | `/health` | HTTP 健康检查 | [基础 API](API.md#4-健康检查) |
+| `GET` | `/health/live` | 仅检查进程存活 | 本页 |
+| `GET` | `/health`、`/health/ready` | COM、SQLite、事件库、STA readiness | 本页 |
+| `GET` | `/api/v1/version` | 获取程序集与协议版本（需 API Key） | 本页 |
+| `GET` | `/api/v1/capabilities` | 获取稳定全局能力标识（需 API Key） | 本页 |
+| `GET` | `/api/v1/diagnostics/health` | 获取分项健康诊断（需 API Key） | 本页 |
 | `GET` | `/api/v1/devices` | 获取当前设备会话列表 | [基础 API](API.md#5-获取设备列表) |
 | `GET` | `/api/v1/devices/{deviceId}` | 获取单个设备状态 | [基础 API](API.md#6-获取单个设备状态) |
 | `POST` | `/api/v1/devices/{deviceId}/connect` | 连接设备并保存配置 | [基础 API](API.md#7-连接设备) |
@@ -55,6 +59,7 @@ Swagger UI 从 jsDelivr 加载前端资源；在完全离线的环境中仍可�
 | `PUT` | `/api/v1/devices/{deviceId}/users/{enrollNumber}/face` | 写入人脸模板 | [扩展 API](EXTENDED_API.md#人脸模板) |
 | `DELETE` | `/api/v1/devices/{deviceId}/users/{enrollNumber}/face` | 删除人脸模板 | [扩展 API](EXTENDED_API.md#人脸模板) |
 | `PUT` | `/api/v1/devices/{deviceId}/users/{enrollNumber}/photo` | 上传用户照片或可见光人脸照片 | [扩展 API](EXTENDED_API.md#人员照片与可见光人脸照片) |
+| `GET` | `/api/v1/devices/{deviceId}/users/{enrollNumber}/photo` | 下载设备原始 JPG 用户照片（非人脸模板） | [扩展 API](EXTENDED_API.md#人员照片与可见光人脸照片) |
 
 人员接口的 `password` 与 `cardNumber` 字段即密码和卡号管理入口；查询响应不会返回
 密码明文，只返回 `hasPassword`。
@@ -63,7 +68,11 @@ Swagger UI 从 jsDelivr 加载前端资源；在完全离线的环境中仍可�
 
 | 方法 | 路径 | 用途 | 详细文档 |
 |---|---|---|---|
+| `GET` | `/api/v1/devices/{deviceId}/capabilities` | 探测人员 ID、门禁、常开、门状态和照片能力 | [扩展 API](EXTENDED_API.md#设备能力探测) |
+| `GET` | `/api/v1/devices/{deviceId}/access/door-state` | 获取当前门开关状态 | [扩展 API](EXTENDED_API.md#门状态与常开) |
 | `POST` | `/api/v1/devices/{deviceId}/access/unlock` | 远程开门 | [扩展 API](EXTENDED_API.md#远程开门) |
+| `POST` | `/api/v1/devices/{deviceId}/access/normally-open/start` | 开始常开并返回原锁驱动时长 | [扩展 API](EXTENDED_API.md#门状态与常开) |
+| `POST` | `/api/v1/devices/{deviceId}/access/normally-open/end` | 结束常开并恢复调用方保存的锁驱动时长 | [扩展 API](EXTENDED_API.md#门状态与常开) |
 | `GET` | `/api/v1/devices/{deviceId}/access/time-zones/{index}` | 获取门禁时间段 | [扩展 API](EXTENDED_API.md#门禁时间段) |
 | `PUT` | `/api/v1/devices/{deviceId}/access/time-zones/{index}` | 设置门禁时间段 | [扩展 API](EXTENDED_API.md#门禁时间段) |
 | `GET` | `/api/v1/devices/{deviceId}/access/groups/{groupNumber}` | 获取权限组 | [扩展 API](EXTENDED_API.md#权限组) |
@@ -79,5 +88,6 @@ Swagger UI 从 jsDelivr 加载前端资源；在完全离线的环境中仍可�
 |---|---|---|---|
 | WebSocket | `/api/v1/events/ws` | 订阅考勤、门、报警等实时事件 | [实时事件](REALTIME_EVENTS.md) |
 
-可通过 `deviceId` 和逗号分隔的 `eventType` 查询参数过滤订阅。服务端客户端应使用
-`X-API-Key` 请求头；浏览器客户端可使用 `apiKey` 查询参数。
+可通过 `deviceId` 和逗号分隔的 `eventType` 查询参数过滤订阅，并通过
+`afterSequence` 从 SQLite 断点续传。服务端客户端应使用 `X-API-Key` 请求头；
+浏览器客户端可使用 `apiKey` 查询参数。

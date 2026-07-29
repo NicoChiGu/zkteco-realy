@@ -4,7 +4,7 @@ using ZktecoRelay.Realtime;
 
 namespace ZktecoRelay.Devices;
 
-internal sealed partial class ZktecoComClient : IDisposable
+internal sealed partial class ZktecoComClient : IZktecoComClient
 {
     private const int MachineNumber = 1;
     private readonly dynamic _sdk;
@@ -48,6 +48,29 @@ internal sealed partial class ZktecoComClient : IDisposable
         var errorCode = 0;
         _sdk.GetLastError(ref errorCode);
         return errorCode;
+    }
+
+    public ConnectionProbeResult ProbeConnection()
+    {
+        ThrowIfDisposed();
+        var errorCode = 0;
+        try
+        {
+            var connected = _sdk.GetConnectStatus(out errorCode);
+            return new ConnectionProbeResult(
+                connected,
+                errorCode,
+                connected
+                    ? null
+                    : $"GetConnectStatus failed. Vendor error: {errorCode}.");
+        }
+        catch (Exception ex)
+        {
+            return new ConnectionProbeResult(
+                null,
+                errorCode,
+                $"GetConnectStatus is unavailable or failed: {ex.Message}");
+        }
     }
 
     public IReadOnlyList<AttendanceRecord> ReadAttendance(

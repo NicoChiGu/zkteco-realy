@@ -19,7 +19,7 @@
 
 ## 安全设计
 
-- 除 `/health` 外，所有 API 都必须提供 `X-API-Key`。
+- 除 `/health`、`/health/live`、`/health/ready` 和文档外，所有 API 都必须提供 `X-API-Key`。
 - API Key 从系统环境变量或 `.env` 文件读取，不写入源代码。
 - 图形管理器默认只监听 `127.0.0.1`。
 - 只有明确勾选“允许内网访问”后才监听 `0.0.0.0`。
@@ -183,7 +183,10 @@ ZKTECO_DATABASE_PATH=D:\ZktecoRelayData\zkteco-relay.db
 
 设备通信密码使用 Windows DPAPI 的本机范围加密后保存，不以明文写入数据库。数据库文件复制到另一台 Windows 主机后不能直接解密原密码。
 
-服务启动时会读取 `autoConnect=true` 的设备配置，并逐台尝试连接。某台设备离线不会阻止 API 服务启动。
+服务持续协调 `autoConnect=true` 的设备配置。运行中掉线后按
+`1s → 3s → 10s → 30s → 60s`（±20% 抖动）重试，成功后清零退避。
+每个设备 STA 线程每 15 秒调用 `GetConnectStatus`，命令失败后也立即补做探测。
+某台设备离线不会使 Relay readiness 失败。
 
 显式调用断开接口会将该设备的自动连接关闭：
 
@@ -265,8 +268,10 @@ powershell -ExecutionPolicy Bypass -File .\scripts\install-sdk-x86.ps1
 ```powershell
 dotnet restore .\ZktecoRelay.csproj
 dotnet restore .\Manager\ZktecoRelay.Manager.csproj
+dotnet restore .\tests\ZktecoRelay.Tests\ZktecoRelay.Tests.csproj
 dotnet build .\ZktecoRelay.csproj -c Release
 dotnet build .\Manager\ZktecoRelay.Manager.csproj -c Release
+dotnet test .\tests\ZktecoRelay.Tests\ZktecoRelay.Tests.csproj -c Release
 ```
 
 发布 x64：
@@ -278,11 +283,17 @@ dotnet publish .\Manager\ZktecoRelay.Manager.csproj -c Release -r win-x64 --self
 
 ## API
 
-健康检查无需密钥：
+健康检查：
 
 ```http
+GET /health/live
 GET /health
+GET /health/ready
 ```
+
+`/health` 与 `/health/ready` 会检查 COM 注册/位数/实例化、SQLite 读写、
+事件库和 STA 工作线程；核心失败返回 `503`。经 API Key 鉴权的
+`/api/v1/diagnostics/health` 返回相同分项诊断。
 
 其他请求需要：
 
@@ -293,6 +304,8 @@ X-API-Key: your-long-random-key
 接口：
 
 ```text
+GET  /api/v1/version
+GET  /api/v1/capabilities
 GET  /api/v1/devices
 GET  /api/v1/devices/{deviceId}
 POST /api/v1/devices/{deviceId}/connect
@@ -306,12 +319,20 @@ GET/PUT/DELETE /api/v1/devices/{deviceId}/users/...
 GET/PUT/DELETE /api/v1/devices/{deviceId}/users/{enrollNumber}/fingerprints/...
 GET/PUT/DELETE /api/v1/devices/{deviceId}/users/{enrollNumber}/face
 PUT  /api/v1/devices/{deviceId}/users/{enrollNumber}/photo
+GET  /api/v1/devices/{deviceId}/users/{enrollNumber}/photo
+GET  /api/v1/devices/{deviceId}/capabilities
+GET  /api/v1/devices/{deviceId}/access/door-state
 POST /api/v1/devices/{deviceId}/access/unlock
+POST /api/v1/devices/{deviceId}/access/normally-open/start
+POST /api/v1/devices/{deviceId}/access/normally-open/end
 GET/PUT /api/v1/devices/{deviceId}/access/time-zones/...
 GET/PUT /api/v1/devices/{deviceId}/access/groups/...
 GET/PUT /api/v1/devices/{deviceId}/access/users/...
 GET/PUT /api/v1/devices/{deviceId}/access/unlock-combinations/...
 ```
+
+WebSocket 持久事件带十进制字符串 `eventSequence`。重连时使用
+`afterSequence` 断点续传；默认保留 30 天且最多 100,000 条。
 
 服务启动后还可访问：
 

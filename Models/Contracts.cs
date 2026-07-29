@@ -25,7 +25,21 @@ public sealed record DeviceStatus(
     int Port,
     bool Connected,
     DateTimeOffset? ConnectedAt,
-    string? LastError);
+    string? LastError,
+    DateTimeOffset? LastCommunicationAt = null,
+    DateTimeOffset? DisconnectedAt = null,
+    int? ReconnectAttempt = null,
+    DateTimeOffset? NextReconnectAt = null);
+
+public sealed record RelayVersion(
+    string Product,
+    string Version,
+    string ApiVersion,
+    int ProtocolVersion);
+
+public sealed record RelayCapabilities(
+    int ProtocolVersion,
+    IReadOnlyList<string> Features);
 
 public sealed record AttendanceRecord(
     string EnrollNumber,
@@ -71,8 +85,32 @@ public sealed record FaceTemplateRequest(string TemplateData, int FaceIndex = 50
 public sealed record FaceTemplateResult(string EnrollNumber, int FaceIndex, string TemplateData, int TemplateLength);
 
 public sealed record UserPhotoRequest(string Base64Jpeg, bool VisibleLightFacePhoto = false);
+public sealed record UserPhotoResult(
+    string EnrollNumber,
+    string FileName,
+    string Base64Jpeg,
+    int ByteLength);
 
 public sealed record DoorUnlockRequest(int DelayTenthsOfSecond = 30);
+public sealed record EndNormallyOpenRequest(int RestoreLockDriveTime);
+public sealed record DoorModeResult(
+    bool NormallyOpen,
+    int LockDriveTime,
+    int? PreviousLockDriveTime,
+    bool? DoorOpen);
+
+public sealed record DeviceCapabilities(
+    int? PinWidth,
+    bool? SupportsAlphabeticPin,
+    int? AccessControlFunction,
+    bool SupportsAdvancedAccess,
+    bool SupportsNormallyOpen,
+    bool SupportsDoorState,
+    bool? SupportsUserPhotoDownload,
+    bool SupportsAttendanceRangeQuery,
+    IReadOnlyList<string> ProbeErrors);
+
+public sealed record DoorStateResult(bool Open, int RawState);
 
 public sealed record TimeZoneRequest(int TimeZoneIndex, string Schedule);
 public sealed record TimeZoneInfoResult(int TimeZoneIndex, string Schedule);
