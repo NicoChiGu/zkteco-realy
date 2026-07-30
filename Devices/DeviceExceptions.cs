@@ -29,3 +29,11 @@ public sealed class DeviceOperationException : Exception
 
     public int? VendorErrorCode { get; }
 }
+
+public sealed class VisibleLightFacePhotoNotFoundException : Exception
+{
+    public VisibleLightFacePhotoNotFoundException(string message)
+        : base(message)
+    {
+    }
+}

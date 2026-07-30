@@ -107,6 +107,7 @@ public sealed record DeviceCapabilities(
     bool SupportsNormallyOpen,
     bool SupportsDoorState,
     bool? SupportsUserPhotoDownload,
+    bool? SupportsVisibleLightFacePhotoDownload,
     bool SupportsAttendanceRangeQuery,
     IReadOnlyList<string> ProbeErrors);
 

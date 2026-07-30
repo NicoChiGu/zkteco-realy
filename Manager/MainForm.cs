@@ -558,6 +558,7 @@ public sealed partial class MainForm : Form
         }
 
         _deviceRefreshTimer.Stop();
+        ClearVisibleLightPhoto();
     }
 
     private async Task ExitApplicationAsync()

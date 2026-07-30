@@ -138,6 +138,18 @@ internal sealed class DeviceManagementController
         return context.Store.Delete(deviceId);
     }
 
+    public Task<UserPhotoResult> DownloadVisibleLightFacePhotoAsync(
+        string deviceId,
+        string enrollNumber,
+        CancellationToken cancellationToken)
+    {
+        var context = ResolveRunningContext();
+        return context.Manager!.DownloadVisibleLightFacePhotoAsync(
+            deviceId,
+            enrollNumber,
+            cancellationToken);
+    }
+
     internal static DeviceManagementSnapshot Merge(
         string databasePath,
         bool relayRunning,

@@ -44,6 +44,7 @@ public interface IZktecoComClient : IDisposable
         string enrollNumber,
         UserPhotoRequest request);
     UserPhotoResult DownloadUserPhoto(string enrollNumber);
+    UserPhotoResult DownloadVisibleLightFacePhoto(string enrollNumber);
     OperationResult UnlockDoor(DoorUnlockRequest request);
     DeviceCapabilities GetCapabilities();
     DoorStateResult GetDoorState();

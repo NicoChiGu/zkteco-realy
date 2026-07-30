@@ -99,9 +99,12 @@ git push origin v1.2.0
 - 保存 `.env`。
 - 启动和停止 API。
 - 打开 `/health` 健康检查。
-- 使用“运行与配置 / 设备管理 / 日志”三个页签分离日常运维任务。
+- 使用“运行与配置 / 设备管理 / 人脸照片 / 日志”四个页签分离日常运维任务。
 - “设备管理”从当前 SQLite 数据库读取设备编号、IP、端口、自动连接配置和更新时间，并合并 Relay 运行中的在线状态、最近通信、重连次数、下次重连和最后错误。
 - 可在设备页刷新、立即连接、断开、启停自动连接或删除数据库配置；删除配置不会删除考勤机内的人员和考勤数据。
+- “人脸照片”可从数据库中的在线设备按工号读取、预览并另存
+  `verify_biophoto_9_{工号}.jpg` 可见光比对照；照片只保存在管理器当前内存中，
+  切换照片或退出时释放。
 - “日志”页显示启动、停止、HTTP 请求、自动重连和运行时日志，但不显示密钥，并支持复制或清空当前会话日志。
 - 启动时自动检查 ZKTeco COM 注册、DLL 位数、关键依赖和 COM 实例化。
 - 提供“检查 SDK / DLL”与“修复/重新注册 DLL”按钮，支持一键查看 DLL 路径/版本，或直接以管理员权限重新注册 `zkemkeeper.dll` 完成组件修复。
@@ -323,6 +326,7 @@ GET/PUT/DELETE /api/v1/devices/{deviceId}/users/{enrollNumber}/fingerprints/...
 GET/PUT/DELETE /api/v1/devices/{deviceId}/users/{enrollNumber}/face
 PUT  /api/v1/devices/{deviceId}/users/{enrollNumber}/photo
 GET  /api/v1/devices/{deviceId}/users/{enrollNumber}/photo
+GET  /api/v1/devices/{deviceId}/users/{enrollNumber}/visible-light-face-photo
 GET  /api/v1/devices/{deviceId}/capabilities
 GET  /api/v1/devices/{deviceId}/access/door-state
 POST /api/v1/devices/{deviceId}/access/unlock

@@ -93,6 +93,7 @@ DELETE /api/v1/devices/{deviceId}/users/{enrollNumber}/face?faceIndex=50
 ```http
 PUT /api/v1/devices/{deviceId}/users/{enrollNumber}/photo
 GET /api/v1/devices/{deviceId}/users/{enrollNumber}/photo
+GET /api/v1/devices/{deviceId}/users/{enrollNumber}/visible-light-face-photo
 ```
 
 普通人员照片：
@@ -127,8 +128,15 @@ GET /api/v1/devices/{deviceId}/users/{enrollNumber}/photo
 }
 ```
 
-Relay 校验文件名、10 MB 大小上限和 JPG 文件头，并使用每次请求独立的临时目录；
+Relay 校验文件名、10 MB 大小上限和 JPG 文件头/文件尾，并使用每次请求独立的临时目录；
 响应完成后不在 Relay 本地保留照片。该 SDK 能力仅适用于支持新架构用户照片的固件。
+
+可见光下载接口根据工号生成唯一允许的文件名
+`verify_biophoto_9_{工号}.jpg`，先使用 `GetUserFacePhotoNames` 核对设备照片清单，
+再通过 `GetUserFacePhotoByName` 读取二进制 JPG。Relay 不接受调用方传入任意照片名，
+也不会把照片写入磁盘；返回前校验 10 MB 上限以及 JPEG SOI/EOI 标记。设备没有该照片时
+返回 `404 visible_light_face_photo_not_found`，SDK 未暴露下载方法时返回
+`422 capability_not_supported`。
 
 ## 设备能力探测
 
@@ -145,6 +153,7 @@ GET /api/v1/devices/{deviceId}/capabilities
   "supportsNormallyOpen": true,
   "supportsDoorState": true,
   "supportsUserPhotoDownload": true,
+  "supportsVisibleLightFacePhotoDownload": true,
   "supportsAttendanceRangeQuery": true,
   "probeErrors": []
 }
@@ -153,7 +162,8 @@ GET /api/v1/devices/{deviceId}/capabilities
 探测使用 SDK 文档中的 `GetDeviceInfo(76)`（PIN2Width）、
 `GetDeviceInfo(77)`（IsSupportABCPin）、`GetACFun`、`GetDoorState` 和
 `IsNewFirmwareMachine`。照片探测方法不可用时
-`supportsUserPhotoDownload=null`，原因写入 `probeErrors`，不会固定报告支持。
+`supportsUserPhotoDownload=null`、`supportsVisibleLightFacePhotoDownload=null`，原因写入
+`probeErrors`，不会固定报告支持。
 单项探测失败会进入 `probeErrors`，调用方不得把未知能力当作已支持。
 
 ## 门状态与常开
@@ -173,8 +183,10 @@ POST /api/v1/devices/{deviceId}/access/normally-open/end
 }
 ```
 
-开始常开仅允许 `GetACFun=14` 的设备。Relay 读取 `GetDeviceInfo(5)` 的原锁驱动
-时长后将其设为 `255`，并把原值返回给上层保存：
+开始常开不再把 `GetACFun=14` 作为硬门槛。Relay 以
+`GetDeviceInfo(5)`/`SetDeviceInfo(5,255)` 的实际结果为准：先读取原锁驱动时长，
+再将其设为 `255`，并把原值返回给上层保存。`GetACFun` 仍作为设备诊断信息返回，
+但部分官方软件可正常控制的固件会错误或不完整地报告该值：
 
 ```json
 {
@@ -194,6 +206,11 @@ POST /api/v1/devices/{deviceId}/access/normally-open/end
 ```
 
 允许恢复范围为 `0-254`。成功响应与开始常开相同，但 `normallyOpen=false`。
+
+厂商 SDK 还把 `SetDeviceInfo(81)` 标为 `~DOTZ`，官方软件称其为
+Normal Open/NO Time Zone。当前 SDK 手册没有给出不同机型的取值范围和时区绑定语义，
+因此 Relay 暂不暴露未经真机验证的“按时间段常开”写接口；应在目标机型验证
+`SetTZInfo` + `SetDeviceInfo(81)` 的组合及取消方式后再形成稳定契约。
 
 ## 远程开门
 

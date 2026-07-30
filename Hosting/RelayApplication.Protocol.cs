@@ -10,6 +10,7 @@ public static partial class RelayApplication
     public static readonly IReadOnlyList<string> ProtocolFeatures =
     [
         "user-photo-download",
+        "visible-light-face-photo-download",
         "device-capability-probe",
         "door-state",
         "normally-open",

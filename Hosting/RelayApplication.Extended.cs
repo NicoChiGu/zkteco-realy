@@ -43,6 +43,9 @@ public static partial class RelayApplication
         app.MapGet("/api/v1/devices/{deviceId}/users/{enrollNumber}/photo", (string deviceId, string enrollNumber, DeviceManager manager, CancellationToken ct) =>
             Execute(() => manager.DownloadUserPhotoAsync(deviceId, enrollNumber, ct)));
 
+        app.MapGet("/api/v1/devices/{deviceId}/users/{enrollNumber}/visible-light-face-photo", (string deviceId, string enrollNumber, DeviceManager manager, CancellationToken ct) =>
+            Execute(() => manager.DownloadVisibleLightFacePhotoAsync(deviceId, enrollNumber, ct)));
+
         app.MapGet("/api/v1/devices/{deviceId}/capabilities", (string deviceId, DeviceManager manager, CancellationToken ct) =>
             Execute(() => manager.GetCapabilitiesAsync(deviceId, ct)));
 
@@ -96,6 +99,12 @@ public static partial class RelayApplication
         catch (ArgumentException ex)
         {
             return Results.BadRequest(new ApiError("invalid_request", ex.Message));
+        }
+        catch (VisibleLightFacePhotoNotFoundException ex)
+        {
+            return Results.NotFound(new ApiError(
+                "visible_light_face_photo_not_found",
+                ex.Message));
         }
         catch (DeviceUnavailableException ex)
         {

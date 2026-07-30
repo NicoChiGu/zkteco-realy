@@ -172,6 +172,7 @@ public sealed class DeviceManager : IDisposable
     public Task<OperationResult> DeleteFaceAsync(string deviceId, string enrollNumber, int faceIndex, CancellationToken ct) => GetRequiredSession(deviceId).DeleteFaceAsync(enrollNumber, faceIndex, ct);
     public Task<OperationResult> UploadUserPhotoAsync(string deviceId, string enrollNumber, UserPhotoRequest request, CancellationToken ct) => GetRequiredSession(deviceId).UploadUserPhotoAsync(enrollNumber, request, ct);
     public Task<UserPhotoResult> DownloadUserPhotoAsync(string deviceId, string enrollNumber, CancellationToken ct) => GetRequiredSession(deviceId).DownloadUserPhotoAsync(enrollNumber, ct);
+    public Task<UserPhotoResult> DownloadVisibleLightFacePhotoAsync(string deviceId, string enrollNumber, CancellationToken ct) => GetRequiredSession(deviceId).DownloadVisibleLightFacePhotoAsync(enrollNumber, ct);
     public Task<OperationResult> UnlockDoorAsync(string deviceId, DoorUnlockRequest request, CancellationToken ct) => GetRequiredSession(deviceId).UnlockDoorAsync(request, ct);
     public Task<DeviceCapabilities> GetCapabilitiesAsync(string deviceId, CancellationToken ct) => GetRequiredSession(deviceId).GetCapabilitiesAsync(ct);
     public Task<DoorStateResult> GetDoorStateAsync(string deviceId, CancellationToken ct) => GetRequiredSession(deviceId).GetDoorStateAsync(ct);

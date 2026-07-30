@@ -60,6 +60,7 @@ Swagger UI 从 jsDelivr 加载前端资源；在完全离线的环境中仍可�
 | `DELETE` | `/api/v1/devices/{deviceId}/users/{enrollNumber}/face` | 删除人脸模板 | [扩展 API](EXTENDED_API.md#人脸模板) |
 | `PUT` | `/api/v1/devices/{deviceId}/users/{enrollNumber}/photo` | 上传用户照片或可见光人脸照片 | [扩展 API](EXTENDED_API.md#人员照片与可见光人脸照片) |
 | `GET` | `/api/v1/devices/{deviceId}/users/{enrollNumber}/photo` | 下载设备原始 JPG 用户照片（非人脸模板） | [扩展 API](EXTENDED_API.md#人员照片与可见光人脸照片) |
+| `GET` | `/api/v1/devices/{deviceId}/users/{enrollNumber}/visible-light-face-photo` | 下载 `verify_biophoto_9_*` 可见光人脸比对照片 | [扩展 API](EXTENDED_API.md#人员照片与可见光人脸照片) |
 
 人员接口的 `password` 与 `cardNumber` 字段即密码和卡号管理入口；查询响应不会返回
 密码明文，只返回 `hasPassword`。

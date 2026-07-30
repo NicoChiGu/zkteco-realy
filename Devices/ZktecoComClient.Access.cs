@@ -151,6 +151,10 @@ internal sealed partial class ZktecoComClient
         var errors = new List<string>();
         var pinWidth = TryGetDeviceInfo(76, "PIN2Width", errors);
         var supportsAlphabeticPinValue = TryGetDeviceInfo(77, "IsSupportABCPin", errors);
+        var lockDriveTime = TryGetDeviceInfo(
+            LockDriveTimeDeviceInfo,
+            "lock drive time",
+            errors);
         int? accessControlFunction = null;
         var supportsDoorState = false;
         bool? supportsUserPhotoDownload = null;
@@ -202,8 +206,10 @@ internal sealed partial class ZktecoComClient
                 : null,
             accessControlFunction,
             accessControlFunction is 6 or 14 or 15,
-            accessControlFunction == 14,
+            accessControlFunction == 14 ||
+                lockDriveTime is >= 0 and <= NormallyOpenLockDriveTime,
             supportsDoorState,
+            supportsUserPhotoDownload,
             supportsUserPhotoDownload,
             SupportsAttendanceRangeQuery: true,
             errors);
@@ -224,13 +230,6 @@ internal sealed partial class ZktecoComClient
     public DoorModeResult StartNormallyOpen()
     {
         ThrowIfDisposed();
-        var capabilities = GetCapabilities();
-        if (!capabilities.SupportsNormallyOpen)
-        {
-            throw new CapabilityNotSupportedException(
-                $"The connected device does not report normally-open support (ACFun={capabilities.AccessControlFunction?.ToString() ?? "unknown"}).");
-        }
-
         var previousLockDriveTime = GetRequiredDeviceInfo(
             LockDriveTimeDeviceInfo,
             "lock drive time");

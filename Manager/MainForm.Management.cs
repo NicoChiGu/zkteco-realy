@@ -36,6 +36,12 @@ public sealed partial class MainForm
         BackColor = CanvasColor,
         Padding = new Padding(12)
     };
+    private readonly TabPage _photosTab = new()
+    {
+        Text = "人脸照片",
+        BackColor = CanvasColor,
+        Padding = new Padding(12)
+    };
     private readonly DataGridView _deviceGrid = new()
     {
         Dock = DockStyle.Fill,
@@ -107,6 +113,44 @@ public sealed partial class MainForm
         Text = "选择一台设备查看连接轨迹。",
         TextAlign = ContentAlignment.MiddleLeft
     };
+    private readonly ComboBox _photoDevice = new()
+    {
+        DropDownStyle = ComboBoxStyle.DropDownList,
+        Width = 260
+    };
+    private readonly TextBox _photoEnrollNumber = new()
+    {
+        PlaceholderText = "工号，例如 EMP_1",
+        Width = 220
+    };
+    private readonly Button _readVisibleLightPhoto = new()
+    {
+        Text = "读取可见光照片",
+        AutoSize = true,
+        Enabled = false
+    };
+    private readonly Button _saveVisibleLightPhoto = new()
+    {
+        Text = "另存为 JPG",
+        AutoSize = true,
+        Enabled = false
+    };
+    private readonly PictureBox _photoPreview = new()
+    {
+        BackColor = Color.White,
+        BorderStyle = BorderStyle.FixedSingle,
+        Dock = DockStyle.Fill,
+        SizeMode = PictureBoxSizeMode.Zoom
+    };
+    private readonly Label _photoStatus = new()
+    {
+        AutoEllipsis = true,
+        Dock = DockStyle.Fill,
+        ForeColor = SecondaryTextColor,
+        Padding = new Padding(10, 8, 10, 8),
+        Text = "选择在线设备并输入工号，读取 verify_biophoto_9_{工号}.jpg。",
+        TextAlign = ContentAlignment.MiddleLeft
+    };
     private readonly Label _logStatus = new()
     {
         AutoSize = true,
@@ -131,11 +175,14 @@ public sealed partial class MainForm
     private DeviceManagementController? _deviceManagement;
     private bool _deviceActionBusy;
     private int _logEntryCount;
+    private byte[]? _visibleLightPhotoBytes;
+    private string? _visibleLightPhotoFileName;
 
     private Control BuildMainTabs()
     {
         _mainTabs.TabPages.Add(BuildConfigurationTab());
         _mainTabs.TabPages.Add(BuildDevicesTab());
+        _mainTabs.TabPages.Add(BuildPhotosTab());
         _mainTabs.TabPages.Add(BuildLogsTab());
         return _mainTabs;
     }
@@ -333,6 +380,54 @@ public sealed partial class MainForm
         return tab;
     }
 
+    private TabPage BuildPhotosTab()
+    {
+        var root = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            RowCount = 3
+        };
+        root.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        root.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        root.RowStyles.Add(new RowStyle(SizeType.Absolute, 54));
+
+        var commandBar = new FlowLayoutPanel
+        {
+            AutoSize = true,
+            Dock = DockStyle.Top,
+            Padding = new Padding(0, 0, 0, 10),
+            WrapContents = false
+        };
+        commandBar.Controls.AddRange(
+        [
+            new Label
+            {
+                AutoSize = true,
+                ForeColor = SecondaryTextColor,
+                Margin = new Padding(0, 8, 6, 0),
+                Text = "设备"
+            },
+            _photoDevice,
+            new Label
+            {
+                AutoSize = true,
+                ForeColor = SecondaryTextColor,
+                Margin = new Padding(10, 8, 6, 0),
+                Text = "工号"
+            },
+            _photoEnrollNumber,
+            _readVisibleLightPhoto,
+            _saveVisibleLightPhoto
+        ]);
+
+        root.Controls.Add(commandBar, 0, 0);
+        root.Controls.Add(_photoPreview, 0, 1);
+        root.Controls.Add(_photoStatus, 0, 2);
+        _photosTab.Controls.Add(root);
+        return _photosTab;
+    }
+
     private static void AddSettingRow(
         TableLayoutPanel settings,
         string label,
@@ -499,11 +594,20 @@ public sealed partial class MainForm
             UpdateSelectedDevice();
         _mainTabs.SelectedIndexChanged += (_, _) =>
         {
-            if (_mainTabs.SelectedTab == _devicesTab)
+            if (_mainTabs.SelectedTab == _devicesTab ||
+                _mainTabs.SelectedTab == _photosTab)
             {
                 RefreshDeviceGrid(showErrors: false);
             }
         };
+        _photoDevice.SelectedIndexChanged += (_, _) =>
+            UpdatePhotoActionState();
+        _photoEnrollNumber.TextChanged += (_, _) =>
+            UpdatePhotoActionState();
+        _readVisibleLightPhoto.Click += async (_, _) =>
+            await ReadVisibleLightPhotoAsync();
+        _saveVisibleLightPhoto.Click += (_, _) =>
+            SaveVisibleLightPhoto();
         _copyLog.Click += (_, _) =>
         {
             if (!string.IsNullOrEmpty(_log.Text))
@@ -546,6 +650,7 @@ public sealed partial class MainForm
             _deviceSummary.Text =
                 $"总计 {snapshot.Devices.Count} · 在线 {snapshot.OnlineCount} · " +
                 $"重连 {snapshot.ReconnectingCount}";
+            RefreshPhotoDeviceList(snapshot.Devices);
 
             if (selectedId is not null)
             {
@@ -615,6 +720,182 @@ public sealed partial class MainForm
             ? "停用自动连接"
             : "启用自动连接";
         _deleteDevice.Enabled = available;
+        UpdatePhotoActionState();
+    }
+
+    private void RefreshPhotoDeviceList(
+        IReadOnlyList<ManagedDeviceRow> devices)
+    {
+        var selected = _photoDevice.SelectedItem as string;
+        var deviceIds = devices
+            .Where(device => device.Connected == true)
+            .Select(device => device.DeviceId)
+            .ToArray();
+
+        _photoDevice.BeginUpdate();
+        try
+        {
+            _photoDevice.Items.Clear();
+            _photoDevice.Items.AddRange(deviceIds);
+            if (selected is not null &&
+                deviceIds.Contains(selected, StringComparer.OrdinalIgnoreCase))
+            {
+                _photoDevice.SelectedItem = deviceIds.First(device =>
+                    string.Equals(
+                        device,
+                        selected,
+                        StringComparison.OrdinalIgnoreCase));
+            }
+            else if (_photoDevice.Items.Count > 0)
+            {
+                _photoDevice.SelectedIndex = 0;
+            }
+        }
+        finally
+        {
+            _photoDevice.EndUpdate();
+        }
+
+        UpdatePhotoActionState();
+    }
+
+    private void UpdatePhotoActionState()
+    {
+        var hasDevice = _photoDevice.SelectedItem is string;
+        var hasEnrollNumber =
+            !string.IsNullOrWhiteSpace(_photoEnrollNumber.Text);
+        _readVisibleLightPhoto.Enabled =
+            !_deviceActionBusy &&
+            _application is not null &&
+            hasDevice &&
+            hasEnrollNumber;
+        _saveVisibleLightPhoto.Enabled =
+            !_deviceActionBusy &&
+            _visibleLightPhotoBytes is { Length: > 0 };
+    }
+
+    private async Task ReadVisibleLightPhotoAsync()
+    {
+        if (_photoDevice.SelectedItem is not string deviceId ||
+            _deviceManagement is null)
+        {
+            return;
+        }
+
+        var enrollNumber = _photoEnrollNumber.Text.Trim();
+        if (enrollNumber.Length == 0 ||
+            enrollNumber.Any(character =>
+                !(character is >= 'A' and <= 'Z' ||
+                  character is >= 'a' and <= 'z' ||
+                  character is >= '0' and <= '9' ||
+                  character is '-' or '_')))
+        {
+            MessageBox.Show(
+                this,
+                "工号只能包含 ASCII 字母、数字、- 和 _。",
+                "工号格式无效",
+                MessageBoxButtons.OK,
+                MessageBoxIcon.Warning);
+            return;
+        }
+
+        await RunDeviceActionAsync(async cancellationToken =>
+        {
+            ClearVisibleLightPhoto();
+            _photoStatus.Text =
+                $"正在从 {deviceId} 读取可见光人脸照片…";
+            var result =
+                await _deviceManagement.DownloadVisibleLightFacePhotoAsync(
+                    deviceId,
+                    enrollNumber,
+                    cancellationToken);
+            var bytes = Convert.FromBase64String(result.Base64Jpeg);
+            if (bytes.Length != result.ByteLength ||
+                bytes.Length is < 4 or > 10 * 1024 * 1024 ||
+                bytes[0] != 0xFF ||
+                bytes[1] != 0xD8 ||
+                bytes[2] != 0xFF ||
+                bytes[^2] != 0xFF ||
+                bytes[^1] != 0xD9)
+            {
+                Array.Clear(bytes);
+                throw new InvalidDataException(
+                    "Relay 返回的可见光人脸照片未通过 JPG 校验。");
+            }
+
+            try
+            {
+                using var stream = new MemoryStream(bytes, writable: false);
+                using var source = Image.FromStream(
+                    stream,
+                    useEmbeddedColorManagement: true,
+                    validateImageData: true);
+                _photoPreview.Image = new Bitmap(source);
+                _visibleLightPhotoBytes = bytes;
+            }
+            catch
+            {
+                Array.Clear(bytes);
+                throw;
+            }
+
+            _visibleLightPhotoFileName = result.FileName;
+            _photoStatus.Text =
+                $"{deviceId} · {result.FileName} · {bytes.Length:N0} 字节 · " +
+                "仅保存在当前管理器内存中";
+            AppendLog(
+                $"已读取设备 {deviceId} 人员 {enrollNumber} 的可见光人脸照片。");
+        });
+    }
+
+    private void SaveVisibleLightPhoto()
+    {
+        if (_visibleLightPhotoBytes is not { Length: > 0 } bytes ||
+            string.IsNullOrWhiteSpace(_visibleLightPhotoFileName))
+        {
+            return;
+        }
+
+        using var dialog = new SaveFileDialog
+        {
+            AddExtension = true,
+            DefaultExt = "jpg",
+            FileName = _visibleLightPhotoFileName,
+            Filter = "JPEG 图片 (*.jpg)|*.jpg",
+            OverwritePrompt = true,
+            Title = "保存可见光人脸照片"
+        };
+        if (dialog.ShowDialog(this) != DialogResult.OK)
+        {
+            return;
+        }
+
+        try
+        {
+            File.WriteAllBytes(dialog.FileName, bytes);
+            _photoStatus.Text =
+                $"已保存到 {dialog.FileName}";
+            AppendLog(
+                $"可见光人脸照片已保存到 {dialog.FileName}。");
+        }
+        catch (Exception ex)
+        {
+            ShowDeviceActionError(ex);
+        }
+    }
+
+    private void ClearVisibleLightPhoto()
+    {
+        _photoPreview.Image?.Dispose();
+        _photoPreview.Image = null;
+        if (_visibleLightPhotoBytes is not null)
+        {
+            Array.Clear(_visibleLightPhotoBytes);
+        }
+
+        _visibleLightPhotoBytes = null;
+        _visibleLightPhotoFileName = null;
+        UpdatePhotoActionState();
     }
 
     private async Task ConnectSelectedDeviceAsync()
@@ -735,6 +1016,7 @@ public sealed partial class MainForm
 
         _deviceActionBusy = true;
         UpdateDeviceActionState();
+        UpdatePhotoActionState();
         try
         {
             using var timeout = new CancellationTokenSource(
@@ -750,6 +1032,7 @@ public sealed partial class MainForm
             _deviceActionBusy = false;
             RefreshDeviceGrid(showErrors: false);
             UpdateDeviceActionState();
+            UpdatePhotoActionState();
         }
     }
 

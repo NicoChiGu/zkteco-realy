@@ -699,6 +699,40 @@ paths:
           $ref: '#/components/responses/CapabilityNotSupported'
         '502':
           $ref: '#/components/responses/DeviceOperationFailed'
+  /api/v1/devices/{deviceId}/users/{enrollNumber}/visible-light-face-photo:
+    parameters:
+      - $ref: '#/components/parameters/DeviceId'
+      - $ref: '#/components/parameters/EnrollNumber'
+    get:
+      tags: [Biometrics]
+      operationId: downloadVisibleLightFacePhoto
+      summary: 下载设备可见光人脸比对照片
+      description: >-
+        按设备约定的 verify_biophoto_9_{enrollNumber}.jpg 文件名读取比对照片；
+        不是人脸算法模板，Relay 不持久化照片。
+      responses:
+        '200':
+          description: 可见光人脸 JPG 照片
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/UserPhotoResult'
+        '400':
+          $ref: '#/components/responses/InvalidRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          description: 设备不存在，或目标人员没有可见光人脸照片
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ApiError'
+        '409':
+          $ref: '#/components/responses/DeviceUnavailable'
+        '422':
+          $ref: '#/components/responses/CapabilityNotSupported'
+        '502':
+          $ref: '#/components/responses/DeviceOperationFailed'
   /api/v1/devices/{deviceId}/capabilities:
     parameters:
       - $ref: '#/components/parameters/DeviceId'
@@ -1203,6 +1237,7 @@ components:
             type: string
           example:
             - user-photo-download
+            - visible-light-face-photo-download
             - device-capability-probe
             - door-state
             - normally-open
@@ -1525,7 +1560,7 @@ components:
           type: string
         fileName:
           type: string
-          pattern: '^[A-Za-z0-9_-]+\.jpg$'
+          pattern: '^(?:[A-Za-z0-9_-]+|verify_biophoto_9_[A-Za-z0-9_-]+)\.jpg$'
         base64Jpeg:
           type: string
           format: byte
@@ -1540,6 +1575,7 @@ components:
         - supportsNormallyOpen
         - supportsDoorState
         - supportsUserPhotoDownload
+        - supportsVisibleLightFacePhotoDownload
         - supportsAttendanceRangeQuery
         - probeErrors
       properties:
@@ -1563,6 +1599,12 @@ components:
           type: boolean
           nullable: true
           description: null 表示当前 SDK 无法完成 IsNewFirmwareMachine 探测。
+        supportsVisibleLightFacePhotoDownload:
+          type: boolean
+          nullable: true
+          description: >-
+            null 表示固件探测未知；实际下载还要求当前 SDK 注册包含
+            GetUserFacePhotoByName。
         supportsAttendanceRangeQuery:
           type: boolean
         probeErrors:

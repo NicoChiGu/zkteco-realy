@@ -147,16 +147,112 @@ internal sealed partial class ZktecoComClient
             }
 
             var bytes = File.ReadAllBytes(fullPath);
-            ValidatePhoto(enrollNumber, bytes);
-            return new UserPhotoResult(
-                enrollNumber,
-                fileName,
-                Convert.ToBase64String(bytes),
-                bytes.Length);
+            try
+            {
+                ValidateDownloadedPhoto(enrollNumber, bytes);
+                return new UserPhotoResult(
+                    enrollNumber,
+                    fileName,
+                    Convert.ToBase64String(bytes),
+                    bytes.Length);
+            }
+            finally
+            {
+                Array.Clear(bytes);
+            }
         }
         finally
         {
             TryDeletePhotoDirectory(tempDirectory);
+        }
+    }
+
+    public UserPhotoResult DownloadVisibleLightFacePhoto(string enrollNumber)
+    {
+        ThrowIfDisposed();
+        EnsureUserPhotoSupported();
+        ValidatePhotoEnrollNumber(enrollNumber);
+        var fileName = $"verify_biophoto_9_{enrollNumber}.jpg";
+        var photoBuffer = new byte[10 * 1024 * 1024];
+        var photoLength = photoBuffer.Length;
+
+        try
+        {
+            string photoNames = string.Empty;
+            var namesAvailable = false;
+            try
+            {
+                namesAvailable =
+                    _sdk.GetUserFacePhotoNames(MachineNumber, out photoNames);
+            }
+            catch (Exception ex) when (IsMissingSdkMember(ex))
+            {
+                // Older SDK registrations may omit enumeration while still
+                // supporting direct retrieval by the deterministic filename.
+            }
+
+            if (namesAvailable &&
+                !SplitPhotoNames(photoNames).Contains(
+                    fileName,
+                    StringComparer.OrdinalIgnoreCase))
+            {
+                throw new VisibleLightFacePhotoNotFoundException(
+                    $"Visible-light face photo '{fileName}' was not found on the device.");
+            }
+
+            bool downloaded;
+            try
+            {
+                downloaded = _sdk.GetUserFacePhotoByName(
+                    MachineNumber,
+                    fileName,
+                    ref photoBuffer[0],
+                    ref photoLength);
+            }
+            catch (Exception ex) when (IsMissingSdkMember(ex))
+            {
+                throw new CapabilityNotSupportedException(
+                    "The registered ZKTeco SDK does not expose visible-light face photo download.");
+            }
+
+            if (!downloaded)
+            {
+                var vendorErrorCode = GetLastError();
+                if (vendorErrorCode == 0)
+                {
+                    throw new VisibleLightFacePhotoNotFoundException(
+                        $"Visible-light face photo '{fileName}' was not found on the device.");
+                }
+
+                throw new DeviceOperationException(
+                    $"GetUserFacePhotoByName failed. Vendor error: {vendorErrorCode}.",
+                    vendorErrorCode);
+            }
+
+            if (photoLength is < 4 or > 10 * 1024 * 1024)
+            {
+                throw new DeviceOperationException(
+                    $"GetUserFacePhotoByName returned invalid photo length {photoLength}.");
+            }
+
+            var bytes = photoBuffer.AsSpan(0, photoLength).ToArray();
+            try
+            {
+                ValidateDownloadedPhoto(enrollNumber, bytes);
+                return new UserPhotoResult(
+                    enrollNumber,
+                    fileName,
+                    Convert.ToBase64String(bytes),
+                    bytes.Length);
+            }
+            finally
+            {
+                Array.Clear(bytes);
+            }
+        }
+        finally
+        {
+            Array.Clear(photoBuffer);
         }
     }
 
@@ -174,9 +270,29 @@ internal sealed partial class ZktecoComClient
             throw new ArgumentException("User photo must be a JPG file between 4 bytes and 10 MB.");
         }
 
-        if (bytes[0] != 0xFF || bytes[1] != 0xD8 || bytes[2] != 0xFF)
+        if (bytes[0] != 0xFF ||
+            bytes[1] != 0xD8 ||
+            bytes[2] != 0xFF ||
+            bytes[^2] != 0xFF ||
+            bytes[^1] != 0xD9)
         {
             throw new ArgumentException("User photo must contain valid JPG data.");
+        }
+    }
+
+    private static void ValidateDownloadedPhoto(
+        string enrollNumber,
+        byte[] bytes)
+    {
+        try
+        {
+            ValidatePhoto(enrollNumber, bytes);
+        }
+        catch (ArgumentException ex)
+        {
+            throw new DeviceOperationException(
+                "The device returned invalid JPG photo data.",
+                innerException: ex);
         }
     }
 
@@ -211,4 +327,15 @@ internal sealed partial class ZktecoComClient
     {
         try { Directory.Delete(path, recursive: true); } catch { }
     }
+
+    private static IEnumerable<string> SplitPhotoNames(string value) =>
+        value.Split(
+            ['\t', '\r', '\n'],
+            StringSplitOptions.RemoveEmptyEntries |
+                StringSplitOptions.TrimEntries);
+
+    private static bool IsMissingSdkMember(Exception exception) =>
+        exception.HResult == unchecked((int)0x80020003) ||
+        exception.GetType().FullName ==
+            "Microsoft.CSharp.RuntimeBinder.RuntimeBinderException";
 }

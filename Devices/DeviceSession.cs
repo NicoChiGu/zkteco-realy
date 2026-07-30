@@ -159,6 +159,7 @@ internal sealed class DeviceSession : IDisposable
     public Task<OperationResult> DeleteFaceAsync(string enrollNumber, int faceIndex, CancellationToken ct) => InvokeClientAsync(c => c.DeleteFace(enrollNumber, faceIndex), ct);
     public Task<OperationResult> UploadUserPhotoAsync(string enrollNumber, UserPhotoRequest request, CancellationToken ct) => InvokeClientAsync(c => c.UploadUserPhoto(enrollNumber, request), ct);
     public Task<UserPhotoResult> DownloadUserPhotoAsync(string enrollNumber, CancellationToken ct) => InvokeClientAsync(c => c.DownloadUserPhoto(enrollNumber), ct);
+    public Task<UserPhotoResult> DownloadVisibleLightFacePhotoAsync(string enrollNumber, CancellationToken ct) => InvokeClientAsync(c => c.DownloadVisibleLightFacePhoto(enrollNumber), ct);
     public Task<OperationResult> UnlockDoorAsync(DoorUnlockRequest request, CancellationToken ct) => InvokeClientAsync(c => c.UnlockDoor(request), ct);
     public Task<DeviceCapabilities> GetCapabilitiesAsync(CancellationToken ct) => InvokeClientAsync(c => c.GetCapabilities(), ct);
     public Task<DoorStateResult> GetDoorStateAsync(CancellationToken ct) => InvokeClientAsync(c => c.GetDoorState(), ct);

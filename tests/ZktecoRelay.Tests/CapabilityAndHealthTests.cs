@@ -100,6 +100,28 @@ public sealed class CapabilityAndHealthTests
         Assert.Equal(readiness.StatusCode, diagnostics.StatusCode);
     }
 
+    [Fact]
+    public async Task MissingVisibleLightFacePhotoUsesSpecificNotFoundCode()
+    {
+        using var factory = new RelayApiFactory(
+            new FakeComClientFactory(() => new MissingPhotoComClient()),
+            maximumRetainedEvents: 100);
+        using var client = factory.CreateClient();
+        await Connect(client);
+
+        using var request = Authenticated(
+            HttpMethod.Get,
+            "/api/v1/devices/front-door/users/1001/visible-light-face-photo");
+        var response = await client.SendAsync(request);
+
+        Assert.Equal(HttpStatusCode.NotFound, response.StatusCode);
+        Assert.Equal(
+            "visible_light_face_photo_not_found",
+            (await response.Content.ReadFromJsonAsync<JsonElement>())
+                .GetProperty("code")
+                .GetString());
+    }
+
     private static async Task Connect(HttpClient client)
     {
         using var request = Authenticated(
@@ -130,6 +152,7 @@ public sealed class CapabilityAndHealthTests
                 true,
                 true,
                 null,
+                null,
                 true,
                 ["IsNewFirmwareMachine is unavailable."]);
 
@@ -141,5 +164,13 @@ public sealed class CapabilityAndHealthTests
             throw new DeviceOperationException(
                 "GetDoorState failed.",
                 -1);
+    }
+
+    private sealed class MissingPhotoComClient : FakeComClient
+    {
+        public override UserPhotoResult DownloadVisibleLightFacePhoto(
+            string enrollNumber) =>
+            throw new VisibleLightFacePhotoNotFoundException(
+                "No visible-light face photo is stored for this user.");
     }
 }

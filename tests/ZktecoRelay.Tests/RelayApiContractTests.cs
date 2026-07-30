@@ -40,6 +40,9 @@ public sealed class RelayApiContractTests : IClassFixture<RelayApiFactory>
                 .ReadFromJsonAsync<RelayCapabilities>();
         Assert.NotNull(capabilities);
         Assert.Contains("user-photo-download", capabilities.Features);
+        Assert.Contains(
+            "visible-light-face-photo-download",
+            capabilities.Features);
         Assert.Contains("device-capability-probe", capabilities.Features);
         Assert.Contains("door-state", capabilities.Features);
         Assert.Contains("normally-open", capabilities.Features);
@@ -55,11 +58,21 @@ public sealed class RelayApiContractTests : IClassFixture<RelayApiFactory>
             "/api/v1/devices/front-door/users/EMP_1/photo");
         Assert.Equal("EMP_1.jpg", photo.GetProperty("fileName").GetString());
 
+        var visibleLightPhoto = await Get<JsonElement>(
+            "/api/v1/devices/front-door/users/EMP_1/visible-light-face-photo");
+        Assert.Equal(
+            "verify_biophoto_9_EMP_1.jpg",
+            visibleLightPhoto.GetProperty("fileName").GetString());
+
         var capabilities = await Get<JsonElement>(
             "/api/v1/devices/front-door/capabilities");
         Assert.True(
             capabilities
                 .GetProperty("supportsUserPhotoDownload")
+                .GetBoolean());
+        Assert.True(
+            capabilities
+                .GetProperty("supportsVisibleLightFacePhotoDownload")
                 .GetBoolean());
 
         var doorState = await Get<JsonElement>(
@@ -87,6 +100,9 @@ public sealed class RelayApiContractTests : IClassFixture<RelayApiFactory>
         Assert.Contains("/api/v1/capabilities:", openApi);
         Assert.Contains(
             "/api/v1/devices/{deviceId}/users/{enrollNumber}/photo:",
+            openApi);
+        Assert.Contains(
+            "/api/v1/devices/{deviceId}/users/{enrollNumber}/visible-light-face-photo:",
             openApi);
         Assert.Contains(
             "/api/v1/devices/{deviceId}/access/door-state:",

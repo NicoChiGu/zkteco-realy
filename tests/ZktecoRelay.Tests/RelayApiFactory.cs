@@ -123,9 +123,16 @@ internal class FakeComClient : IZktecoComClient
         UserPhotoRequest request) => new(true);
     public UserPhotoResult DownloadUserPhoto(string enrollNumber) =>
         new(enrollNumber, $"{enrollNumber}.jpg", "/9j/2Q==", 4);
+    public virtual UserPhotoResult DownloadVisibleLightFacePhoto(
+        string enrollNumber) =>
+        new(
+            enrollNumber,
+            $"verify_biophoto_9_{enrollNumber}.jpg",
+            "/9j/2Q==",
+            4);
     public OperationResult UnlockDoor(DoorUnlockRequest request) => new(true);
     public virtual DeviceCapabilities GetCapabilities() =>
-        new(16, true, 14, true, true, true, true, true, []);
+        new(16, true, 14, true, true, true, true, true, true, []);
     public virtual DoorStateResult GetDoorState() => new(true, 1);
     public virtual DoorModeResult StartNormallyOpen() =>
         new(true, 255, 5, true);
